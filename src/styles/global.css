@@ -1,0 +1,231 @@
+/* Global styles merged from AdminDashboard.css, Login.css, Register.css */
+
+/* Reset and base (from index.css) */
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+/* App layout (from App.css) */
+.App {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.main-content {
+  flex: 1;
+  background-color: #f9fafb;
+}
+
+.main-content:has(.admin-page) {
+  margin: 0;
+  padding: 0;
+}
+
+.simple-home {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background-color: #f9fafb;
+}
+
+.simple-content {
+  text-align: center;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.simple-content h1 {
+  font-size: 3rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #1e40af, #3b82f6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin: 0 0 16px 0;
+  line-height: 1.2;
+}
+
+.simple-content p {
+  font-size: 1.25rem;
+  color: #6b7280;
+  margin: 0 0 32px 0;
+  line-height: 1.6;
+}
+
+.btn {
+  padding: 12px 24px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #3b82f6, #1e40af);
+  color: white;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, #2563eb, #1e3a8a);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+}
+
+.btn-secondary {
+  background: white;
+  color: #3b82f6;
+  border: 1px solid #e5e7eb;
+}
+
+.btn-secondary:hover {
+  background: rgba(59, 130, 246, 0.05);
+  border-color: rgba(59, 130, 246, 0.3);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
+}
+
+@media (max-width: 768px) {
+  .simple-content h1 { font-size: 2rem; }
+  .simple-content p { font-size: 1.1rem; }
+  .btn { width: 100%; max-width: 300px; }
+}
+
+/* Admin Dashboard (from AdminDashboard.css) */
+.dashboard-overview { width: 100%; margin: 0; padding-top: 0; }
+.dashboard-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+.dashboard-header h1 { color: #1e40af; font-size: 2rem; font-weight: 700; margin: 0 0 8px 0; }
+.dashboard-header p { color: #64748b; font-size: 1rem; margin: 0; }
+.header-actions { display: flex; gap: 12px; }
+
+/* Normalize Admin custom button classes to shared btns */
+.btn-new-booking { background: linear-gradient(135deg, #1e40af, #3b82f6); color: #fff; border: none; padding: 12px 20px; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.2s ease; }
+.btn-new-booking:hover { background: linear-gradient(135deg, #1e3a8a, #2563eb); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(30, 64, 175, 0.3); }
+
+.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; margin-bottom: 20px; }
+.stat-card { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); border: none; display: flex; align-items: center; gap: 16px; transition: transform 0.2s ease, box-shadow 0.2s ease; }
+.stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); }
+.stat-icon { font-size: 2.5rem; width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #3b82f6, #1e40af); border-radius: 12px; }
+.stat-content h3 { color: #374151; font-size: 0.9rem; font-weight: 600; margin: 0 0 4px 0; text-transform: uppercase; letter-spacing: 0.5px; }
+.stat-number { color: #1e40af; font-size: 2rem; font-weight: 700; margin: 0 0 4px 0; }
+.stat-change { color: #10b981; font-size: 0.8rem; margin: 0; }
+
+.feature-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; margin-bottom: 20px; }
+.feature-card { background: white; border-radius: 12px; padding: 32px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); border: none; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 20px; transition: transform 0.2s ease, box-shadow 0.2s ease; cursor: pointer; }
+.feature-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); }
+.feature-icon { font-size: 3rem; width: 80px; height: 80px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #3b82f6, #1e40af); border-radius: 16px; }
+.feature-content h3 { color: #1e40af; font-size: 1.25rem; font-weight: 600; margin: 0 0 8px 0; text-align: center; }
+.feature-content p { color: #64748b; font-size: 0.9rem; margin: 0; line-height: 1.5; text-align: center; }
+
+.recent-section { background: white; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); border: none; }
+.section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; }
+.section-header h2 { color: #1e40af; font-size: 1.5rem; font-weight: 600; margin: 0; }
+.view-all-btn { background: none; border: none; color: #1e40af; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: color 0.2s ease; }
+.view-all-btn:hover { color: #1e3a8a; }
+
+.bookings-list { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }
+.booking-card { background: #f8fafc; border-radius: 8px; padding: 16px; display: flex; align-items: center; gap: 16px; transition: all 0.2s ease; }
+.booking-card:hover { background: #f0f9ff; transform: translateX(4px); }
+.booking-icon { width: 40px; height: 40px; border-radius: 50%; background: #e0f2fe; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; }
+.booking-info { flex: 1; }
+.booking-info h4 { color: #374151; font-size: 1rem; font-weight: 600; margin: 0 0 4px 0; }
+.booking-info p { color: #64748b; font-size: 0.85rem; margin: 0; }
+.booking-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.booking-date { color: #374151; font-size: 0.85rem; margin: 0; }
+.status-badge { padding: 4px 12px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+.status-badge.active { background: #dcfce7; color: #166534; }
+.status-badge.pending { background: #fef3c7; color: #92400e; }
+
+@media (max-width: 768px) {
+  .dashboard-header { flex-direction: column; gap: 16px; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .feature-cards { grid-template-columns: 1fr; }
+}
+
+/* Authentication (from Login.css + Register.css) */
+.login-page { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+@media (min-width: 48em) { .login-page { flex-direction: row; } }
+.login-left { position: relative; width: 100%; padding: 2rem; color: #ffffff; background: #60a5fa; overflow: hidden; box-sizing: border-box; }
+@media (min-width: 48em) { .login-left { width: 50%; flex: 0 0 50%; max-width: 50%; } .login-right { flex: 0 0 50%; max-width: 50%; justify-content: center; } }
+@media (min-width: 64em) { .login-left { width: 50%; flex: 0 0 50%; max-width: 50%; } .login-right { flex: 0 0 50%; max-width: 50%; justify-content: center; } }
+.left-overlay-grid { position: absolute; inset: 0; display: none; pointer-events: none; }
+.left-ornament { position: absolute; border-radius: 9999px; display: none; }
+.brand-row { display: flex; align-items: center; gap: 0.75rem; }
+.brand-badge { width: clamp(2rem, 4vw, 2.75rem); height: clamp(2rem, 4vw, 2.75rem); border-radius: 0.75rem; background: #fff; color: #2563eb; display: flex; align-items: center; justify-content: center; font-weight: 700; }
+.brand-name { font-weight: 700; font-size: clamp(1rem, 1.2vw + 0.8rem, 1.5rem); color: inherit; }
+.left-content { margin: 5rem 0 4rem; max-width: 36rem; text-align: left; }
+.headline { font-size: clamp(1.5rem, 2.5vw + 0.5rem, 2.25rem); line-height: 1.2; font-weight: 800; margin-bottom: 0.75rem; color: inherit; text-align: left; }
+.subhead { margin-bottom: 1rem; color: inherit; }
+.features { list-style: none; padding: 0; margin: 0; text-align: left; }
+.features li { display: grid; grid-template-columns: 1.2rem 1fr; align-items: center; column-gap: 1.75rem; margin: 0.625rem 0; color: inherit; text-align: left; }
+.features li span { text-align: left; margin: 0; }
+.feature-icon { display: inline-flex; align-items: center; justify-content: center; padding: 0.05rem; border-radius: 0.25rem; background: rgba(255,255,255,0.2); color: #ffffff; font-size: 0.75rem; line-height: 1; }
+
+/* Strongly reduce/disable background for icons in login left panel */
+.login-left .feature-icon {
+  background: rgba(255,255,255,0.12) !important;
+  padding: 0.5rem !important;
+  width: 1.25rem !important;
+  height: 1.25rem !important;
+  border-radius: 0.375rem !important;
+}
+.footer-note { font-size: 0.75rem; color: inherit; }
+.login-right { width: 100%; display: flex; align-items: center; justify-content: center; padding: 4rem 2rem; background: #fff; box-sizing: border-box; }
+@media (prefers-color-scheme: dark) { .login-right { background: #0b0b0c; color: #f3f4f6; } }
+.panel { width: 100%; max-width: clamp(22rem, 42vw, 32rem); }
+.panel-header h2 { font-size: clamp(1.25rem, 1.5vw + 0.75rem, 1.75rem); margin: 0; }
+.panel-header p { margin-top: 0.375rem; color: #6b7280; }
+.form { margin-top: 1.125rem; display: grid; gap: 1rem; }
+.form-group label { display: block; font-size: 0.875rem; margin-bottom: 0.375rem; color: #374151; }
+.required-asterisk { color: #ef4444; margin-left: 0.25rem; }
+@media (prefers-color-scheme: dark) { .form-group label { color: #d1d5db; } }
+.input-wrap { position: relative; }
+.input-icon { position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); color: #9ca3af; }
+.input-icon svg { display: block; width: 1rem; height: 1rem; }
+.input-wrap input { width: 100%; padding: 0.75rem 2.25rem 0.75rem 2.25rem; border-radius: 0.625rem; border: 1px solid #d1d5db; background: #fff; color: #111827; outline: none; transition: box-shadow 150ms, border-color 150ms; box-sizing: border-box; }
+.input-wrap input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.2); }
+.input-action { position: absolute; right: 0.75rem; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: #9ca3af; cursor: pointer; padding: 0; display: inline-flex; }
+.input-action:hover { color: #6b7280; }
+.input-action svg { display: block; width: 18px; height: 18px; }
+@media (prefers-color-scheme: dark) { .input-wrap input { background: #111827; color: #f3f4f6; border-color: #374151; } .input-wrap input:focus { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(96,165,250,0.25); } }
+.form-row { display: flex; align-items: center; justify-content: space-between; }
+.checkbox { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; color: #374151; }
+.link { color: #2563eb; text-decoration: none; font-size: 0.875rem; background: transparent; border: 0; }
+.link:hover { text-decoration: underline; }
+.btn { cursor: pointer; border: 0; border-radius: 0.625rem; padding: 0.75rem 0.875rem; font-weight: 600; transition: transform 120ms, box-shadow 150ms, opacity 150ms; }
+.btn:active { transform: scale(0.98); }
+.btn-primary { width: 100%; background: #60a5fa; color: #fff; box-shadow: none; display: block; text-align: center; gap: 8px; box-sizing: border-box; }
+.btn-primary:hover { background: #60a5fa; }
+.arrow { animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100% { opacity: .6 } 50% { opacity: 1 } }
+.form-footer { margin-top: 0.75rem; display: flex; justify-content: center; align-items: center; gap: 0.5rem; color: #6b7280; }
+.form-footer .link { color: #2563eb; }
+.form-footer .link:hover { color: #1d4ed8; text-decoration: underline; }
+
+/* Register-specific overrides */
+.register-page .panel { max-width: clamp(22rem, 42vw, 34rem); min-height: 60vh; }
+.register-page { height: 100dvh; overflow: hidden; }
+.register-page .login-right { margin: 2rem 0; }
+
+
