@@ -1,0 +1,44 @@
+name: Deploy React to Vercel
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Bước 1: Checkout mã nguồn
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Bước 2: Cài đặt Node.js
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Bước 3: Cache dependencies (tăng tốc)
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: ${{ runner.os }}-node-
+
+      # Bước 4: Cài đặt dependencies
+      - name: Install dependencies
+        run: npm install
+
+      # Bước 5: Build dự án React
+      - name: Build project
+        run: npm run build
+        env:
+          CI: true
+          REACT_APP_API_BASE_URL: http://swd392group6.runasp.net
+
+      # Bước 6: Deploy to Vercel
+      - name: Deploy to Vercel
+        run: npx vercel@latest --prod --token ${{ secrets.VERCEL_TOKEN }} --yes --project swd392-fptulabevents-fe -m githubCommitSha=$GITHUB_SHA -m githubCommitAuthorName=$GITHUB_ACTOR -m githubDeployment=1 -m githubOrg=namnm309o -m githubRepo=swd392-fptulabevents-fe -m githubCommitMessage="update github action" -m githubCommitRef=main
