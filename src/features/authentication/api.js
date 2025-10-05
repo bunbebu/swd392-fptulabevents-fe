@@ -1,4 +1,6 @@
-const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://swd392group6.runasp.net';
+// Nếu có REACT_APP_API_BASE_URL thì dùng (gọi trực tiếp với CORS)
+// Nếu không có thì dùng '' (dùng proxy trong package.json)
+const API_BASE = process.env.REACT_APP_API_BASE_URL || '';
 
 async function request(path, options) {
   let resp;
@@ -77,5 +79,3 @@ export async function register({ email, username, password, fullname, mssv }) {
 
 const authApi = { login, register };
 export default authApi;
-
-

@@ -26,14 +26,6 @@ function App() {
         <Login onLogin={handleLoggedIn} onSwitchToRegister={() => setMode('register')} />
       ) : (
         <Register
-          onRegistered={({ user, accessToken, refreshToken }) => {
-            // auto-login sau khi đăng ký
-            const storage = window.localStorage;
-            storage.setItem('accessToken', accessToken);
-            storage.setItem('refreshToken', refreshToken);
-            storage.setItem('user', JSON.stringify(user));
-            setAuth({ user, accessToken, refreshToken });
-          }}
           onSwitchToLogin={() => setMode('login')}
         />
       )}
