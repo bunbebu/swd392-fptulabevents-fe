@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { userApi, authApi } from '../../../api';
+import React, { useState, useEffect, useCallback } from 'react';
+import { userApi } from '../../../api';
 import UserForm from '../UserForm';
 import UserStatusForm from '../UserStatusForm';
 
@@ -30,7 +30,7 @@ const UserList = () => {
   const [viewLoading, setViewLoading] = useState(false);
 
   // Load users
-  const loadUsers = async (page = currentPage) => {
+  const loadUsers = useCallback(async (page = currentPage) => {
     try {
       setLoading(true);
       setError(null);
@@ -98,11 +98,11 @@ const UserList = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentPage, pageSize]);
 
   useEffect(() => {
     loadUsers();
-  }, []);
+  }, [loadUsers]);
 
   // Handle page change
   const handlePageChange = (newPage) => {
@@ -194,10 +194,7 @@ const UserList = () => {
   };
 
   // Open status modal
-  const openStatusModal = (user) => {
-    setSelectedUser(user);
-    setShowStatusModal(true);
-  };
+  // (Removed unused openStatusModal)
 
   // Get status badge class
   const getStatusBadgeClass = (status) => {

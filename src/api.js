@@ -323,8 +323,10 @@ export const userApi = {
 };
 
 // Default export with all APIs
-export default {
+const api = {
   auth: authApi,
   user: userApi,
   request
 };
+
+export default api;

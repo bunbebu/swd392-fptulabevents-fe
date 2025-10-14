@@ -1,5 +1,4 @@
 import React from 'react';
-import { UserList } from '../../user-management';
 // styles moved to global.css
 
 const AdminDashboard = ({ user }) => {
