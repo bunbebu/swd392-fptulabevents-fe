@@ -1,7 +1,8 @@
 import React from 'react';
+import { UserList } from '../../user-management';
 // styles moved to global.css
 
-const AdminDashboard = () => {
+const AdminDashboard = ({ user }) => {
   const recentBookings = [
     { id: 1, name: 'John Doe', email: 'john@fpt.edu.vn', date: '9/27/2025', status: 'Active' },
     { id: 2, name: 'Jane Smith', email: 'jane@fpt.edu.vn', date: '9/26/2025', status: 'Active' },
@@ -12,10 +13,11 @@ const AdminDashboard = () => {
 
   return (
     <div className="dashboard-overview">
+      
       <div className="dashboard-header">
         <div className="dashboard-title">
-          <h1>Super Admin Dashboard</h1>
-          <p>Manage bookings, users, and platform analytics</p>
+          <h1>Admin Dashboard</h1>
+          <p>Welcome back, {user?.fullname || user?.username || 'Admin'}. Manage bookings, users, and platform analytics</p>
         </div>
         <div className="dashboard-actions">
           <button className="btn-new-booking">

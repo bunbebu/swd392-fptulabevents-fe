@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AdminDashboard, Login, Home } from './features';
 import { Register } from './features/authentication';
+import { authApi } from './api';
 // styles moved to global.css
 
 function App() {
   const [auth, setAuth] = useState(null);
   const [mode, setMode] = useState('login'); // 'login' | 'register'
+  const [booting, setBooting] = useState(true);
 
   const handleLoggedIn = (payload) => {
     const { user, accessToken, refreshToken, remember } = payload;
@@ -17,7 +19,32 @@ function App() {
   };
 
   const isAdmin = auth?.user?.roles?.includes('Admin');
-  if (isAdmin) return <AdminDashboard />;
+  useEffect(() => {
+    // Try bootstrapping from storage
+    const accessToken = window.localStorage.getItem('accessToken') || window.sessionStorage.getItem('accessToken');
+    const refreshToken = window.localStorage.getItem('refreshToken') || window.sessionStorage.getItem('refreshToken');
+    const savedUser = window.localStorage.getItem('user') || window.sessionStorage.getItem('user');
+    (async () => {
+      try {
+        let user = savedUser ? JSON.parse(savedUser) : null;
+        if (!user && (accessToken || refreshToken)) {
+          // fetch current user via /me (will auto refresh if needed)
+          const me = await authApi.me();
+          user = me?.user || me?.User || me || null;
+          const storage = window.localStorage.getItem('refreshToken') ? window.localStorage : window.sessionStorage;
+          if (user) storage.setItem('user', JSON.stringify(user));
+        }
+        if (user) setAuth({ user, accessToken, refreshToken });
+      } catch (_e) {
+        // ignore
+      } finally {
+        setBooting(false);
+      }
+    })();
+  }, []);
+
+  if (booting) return null;
+  if (isAdmin) return <AdminDashboard user={auth.user} />;
   if (auth) return <Home />;
 
   return (

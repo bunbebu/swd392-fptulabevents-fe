@@ -1,11 +1,43 @@
 import React, { useState, useEffect, useRef } from 'react';
 import AdminDashboardOverview from '../components/AdminDashboard';
+import { UserList } from '../../user-management';
+import { authApi } from '../../../api';
 
-const AdminDashboard = () => {
+const AdminDashboard = ({ user: userProp }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const [user, setUser] = useState(userProp);
   const userDropdownRef = useRef(null);
+
+  // Helper function to generate avatar initials
+  const getAvatarInitials = (name) => {
+    if (!name) return 'SA';
+    const names = name.trim().split(' ');
+    if (names.length >= 2) {
+      return (names[0][0] + names[names.length - 1][0]).toUpperCase();
+    }
+    return names[0].substring(0, 2).toUpperCase();
+  };
+
+  // Get user display information with fallbacks
+  const displayName = user?.fullname || user?.username || 'Admin';
+  const displayEmail = user?.email || 'admin@fpt.edu.vn';
+  const avatarInitials = getAvatarInitials(displayName);
+
+  // Load user data from storage if not provided as prop
+  useEffect(() => {
+    if (!user) {
+      const storedUser = window.localStorage.getItem('user') || window.sessionStorage.getItem('user');
+      if (storedUser) {
+        try {
+          setUser(JSON.parse(storedUser));
+        } catch (error) {
+          console.error('Error parsing stored user data:', error);
+        }
+      }
+    }
+  }, [user]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -106,7 +138,7 @@ const AdminDashboard = () => {
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
-        return <AdminDashboardOverview />;
+        return <AdminDashboardOverview user={user} />;
       case 'bookings':
         return (
           <div className="admin-content">
@@ -118,9 +150,7 @@ const AdminDashboard = () => {
       case 'users':
         return (
           <div className="admin-content">
-            <h2>User Management</h2>
-            <p>Manage user accounts and roles</p>
-            {/* TODO: Implement user management */}
+            <UserList />
           </div>
         );
       case 'rooms':
@@ -156,7 +186,7 @@ const AdminDashboard = () => {
           </div>
         );
       default:
-        return <AdminDashboardOverview />;
+        return <AdminDashboardOverview user={user} />;
     }
   };
 
@@ -193,12 +223,12 @@ const AdminDashboard = () => {
             <div className="brand-logo">FL</div>
             <div className="brand-text">
               <h3>FPT Lab Events</h3>
-              <p>SUPER ADMIN</p>
+              <p>ADMIN PANEL</p>
             </div>
           </div>
           
           <div className="sidebar-nav-section">
-            <div className="section-label">SUPER ADMIN</div>
+            <div className="section-label">ADMIN</div>
         <nav className="sidebar-nav">
           {tabs.map(tab => (
                 <div
@@ -217,12 +247,21 @@ const AdminDashboard = () => {
       
           <div className="sidebar-user">
             <div className="user-profile">
-              <div className="user-avatar">SA</div>
+              <div className="user-avatar">{avatarInitials}</div>
               <div className="user-info">
-                <p className="user-name">Super Admin</p>
-                <p className="user-role">Super Administrator</p>
+                <p className="user-name">{displayName}</p>
+                <p className="user-role">Administrator</p>
               </div>
-              <button className="logout-btn">
+              <button className="logout-btn" onClick={async () => {
+                try {
+                  await authApi.logout();
+                } catch {}
+                const storage = window.localStorage.getItem('accessToken') ? window.localStorage : window.sessionStorage;
+                storage.removeItem('accessToken');
+                storage.removeItem('refreshToken');
+                storage.removeItem('user');
+                window.location.reload();
+              }}>
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
                   <polyline points="16 17 21 12 16 7"></polyline>
@@ -285,21 +324,21 @@ const AdminDashboard = () => {
               <div className="header-user" ref={userDropdownRef} onClick={() => setUserDropdownOpen(!userDropdownOpen)}>
                 <div className="user-details">
                   <div className="user-info-header">
-                    <p className="user-name">Super Admin</p>
+                    <p className="user-name">{displayName}</p>
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`dropdown-arrow ${userDropdownOpen ? 'open' : ''}`}>
                       <path d="m6 9 6 6 6-6"></path>
                     </svg>
                   </div>
-                  <p className="user-role">Super Administrator</p>
+                  <p className="user-role">Administrator</p>
                 </div>
-                <div className="user-avatar-small">SA</div>
+                <div className="user-avatar-small">{avatarInitials}</div>
                 
                 {/* User Dropdown Menu */}
                 {userDropdownOpen && (
                   <div className="user-dropdown">
                     <div className="dropdown-header">
-                      <p className="dropdown-name">Super Admin</p>
-                      <p className="dropdown-email">superadmin@fpt.edu.vn</p>
+                      <p className="dropdown-name">{displayName}</p>
+                      <p className="dropdown-email">{displayEmail}</p>
                     </div>
                     <div className="dropdown-divider"></div>
                     <div className="dropdown-menu">

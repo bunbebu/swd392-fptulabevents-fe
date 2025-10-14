@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { login as apiLogin } from './api';
+import { login as apiLogin } from '../../api';
 // styles moved to global.css
 
 function Login({ onLogin, onSwitchToRegister }) {
@@ -17,6 +17,10 @@ function Login({ onLogin, onSwitchToRegister }) {
     try {
       const { user, accessToken, refreshToken } = await apiLogin({ identifier: email, password });
       if (!accessToken || !user) throw new Error('Invalid response');
+      const status = (user.status || user.Status || '').toString().toLowerCase();
+      if (status && status !== 'active') {
+        throw new Error('Your account is inactive. Please contact the administrator.');
+      }
       onLogin && onLogin({ user, accessToken, refreshToken, remember });
     } catch (err) {
       setError(err.message || 'Login failed');

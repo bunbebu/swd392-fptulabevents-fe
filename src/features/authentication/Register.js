@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 // styles moved to global.css
-import { register as apiRegister } from './api';
+import { register as apiRegister } from '../../api';
 
 function Register({ onRegistered, onSwitchToLogin }) {
   const [email, setEmail] = useState('');
