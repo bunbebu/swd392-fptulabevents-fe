@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import AdminDashboardOverview from '../components/AdminDashboard';
-import './AdminDashboard.css';
 
 const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
