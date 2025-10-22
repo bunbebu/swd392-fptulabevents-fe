@@ -18,19 +18,19 @@ export const formatUserId = (id) => {
 export const getStatusDisplay = (status) => {
   const statusMap = {
     'active': {
-      label: 'Kích hoạt',
+      label: 'Active',
       className: 'active',
       color: '#155724',
       bgColor: '#d4edda'
     },
     'inactive': {
-      label: 'Không hoạt động',
+      label: 'Inactive',
       className: 'inactive',
       color: '#721c24',
       bgColor: '#f8d7da'
     },
     'locked': {
-      label: 'Bị khóa',
+      label: 'Locked',
       className: 'locked',
       color: '#856404',
       bgColor: '#fff3cd'
@@ -67,7 +67,7 @@ export const validatePassword = (password) => {
   
   return {
     isValid: hasMinLength,
-    errors: hasMinLength ? [] : [`Mật khẩu phải có ít nhất ${minLength} ký tự`]
+    errors: hasMinLength ? [] : [`Password must have at least ${minLength} characters`]
   };
 };
 
@@ -105,9 +105,9 @@ export const getAvailableRoles = () => {
  */
 export const getStatusOptions = () => {
   return [
-    { value: 'Active', label: 'Kích hoạt', description: 'Người dùng có thể đăng nhập và sử dụng hệ thống' },
-    { value: 'Inactive', label: 'Không hoạt động', description: 'Người dùng không thể đăng nhập' },
-    { value: 'Locked', label: 'Bị khóa', description: 'Tài khoản bị khóa do vi phạm hoặc bảo mật' }
+    { value: 'Active', label: 'Active', description: 'User can login and use the system' },
+    { value: 'Inactive', label: 'Inactive', description: 'User cannot login' },
+    { value: 'Locked', label: 'Locked', description: 'Account locked due to violation or security' }
   ];
 };
 
@@ -169,6 +169,6 @@ export const getPaginationInfo = (currentPage, totalPages, totalItems, pageSize)
     totalItems,
     hasNextPage: currentPage < totalPages,
     hasPrevPage: currentPage > 1,
-    pageInfo: `Hiển thị ${startItem}-${endItem} trong tổng số ${totalItems} mục`
+    pageInfo: `Showing ${startItem}-${endItem} of ${totalItems} items`
   };
 };

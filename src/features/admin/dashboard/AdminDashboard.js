@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import AdminDashboardOverview from '../components/AdminDashboard';
 import { UserList } from '../../user-management';
+import { EquipmentList, EquipmentDetail } from '../../equipment-management';
+import EditEquipment from '../../equipment-management/admin/EditEquipment';
+import { RoomList } from '../../room-management';
+import RoomDetail from '../../room-management/components/RoomDetail';
 import { authApi } from '../../../api';
 
 const AdminDashboard = ({ user: userProp }) => {
@@ -8,6 +12,10 @@ const AdminDashboard = ({ user: userProp }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [user, setUser] = useState(userProp);
+  const [viewingRoomId, setViewingRoomId] = useState(null);
+  const [viewingEquipmentId, setViewingEquipmentId] = useState(null);
+  const [editingEquipmentId, setEditingEquipmentId] = useState(null);
+  const [equipmentToast, setEquipmentToast] = useState(null);
   const userDropdownRef = useRef(null);
 
   // Helper function to generate avatar initials
@@ -53,6 +61,22 @@ const AdminDashboard = ({ user: userProp }) => {
     };
   }, []);
 
+  const handleLogout = async () => {
+    try {
+      await authApi.logout();
+    } catch {}
+    try {
+      // Clear both storages to be safe
+      window.localStorage.removeItem('accessToken');
+      window.localStorage.removeItem('refreshToken');
+      window.localStorage.removeItem('user');
+      window.sessionStorage.removeItem('accessToken');
+      window.sessionStorage.removeItem('refreshToken');
+      window.sessionStorage.removeItem('user');
+    } catch {}
+    window.location.reload();
+  };
+
   const tabs = [
     { 
       id: 'dashboard', 
@@ -87,6 +111,16 @@ const AdminDashboard = ({ user: userProp }) => {
           <path d="M16 3.128a4 4 0 0 1 0 7.744"></path>
           <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
           <circle cx="9" cy="7" r="4"></circle>
+        </svg>
+      )
+    },
+    { 
+      id: 'equipment', 
+      label: 'Equipment', 
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+          <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
         </svg>
       )
     },
@@ -153,12 +187,59 @@ const AdminDashboard = ({ user: userProp }) => {
             <UserList />
           </div>
         );
-      case 'rooms':
+      case 'equipment':
+        if (editingEquipmentId) {
+          return (
+            <div className="admin-content">
+              <EditEquipment
+                equipmentId={editingEquipmentId}
+                onNavigateBack={() => setEditingEquipmentId(null)}
+                onSuccess={() => {
+                  setEditingEquipmentId(null);
+                  setEquipmentToast({ message: 'Equipment updated successfully!', type: 'success' });
+                }}
+              />
+            </div>
+          );
+        }
+        if (viewingEquipmentId) {
+          return (
+            <div className="admin-content">
+              <EquipmentDetail
+                equipmentId={viewingEquipmentId}
+                onNavigateBack={() => setViewingEquipmentId(null)}
+              />
+            </div>
+          );
+        }
         return (
           <div className="admin-content">
-            <h2>Room Management</h2>
-            <p>Manage lab rooms and equipment</p>
-            {/* TODO: Implement room management */}
+            <EquipmentList 
+              userRole="Admin" 
+              onViewEquipment={(equipmentId) => setViewingEquipmentId(equipmentId)}
+              onEditEquipment={(equipmentId) => setEditingEquipmentId(equipmentId)}
+              initialToast={equipmentToast}
+              onToastShown={() => setEquipmentToast(null)}
+            />
+          </div>
+        );
+      case 'rooms':
+        if (viewingRoomId) {
+          return (
+            <div className="admin-content">
+              <RoomDetail
+                roomId={viewingRoomId}
+                onNavigateBack={() => setViewingRoomId(null)}
+              />
+            </div>
+          );
+        }
+        return (
+          <div className="admin-content">
+            <RoomList
+              userRole="Admin"
+              onViewRoom={(roomId) => setViewingRoomId(roomId)}
+            />
           </div>
         );
       case 'permissions':
@@ -364,7 +445,7 @@ const AdminDashboard = ({ user: userProp }) => {
                         </svg>
                         <span>Reports</span>
                       </div>
-                      <div className="dropdown-item sign-out">
+                      <div className="dropdown-item sign-out" onClick={(e) => { e.stopPropagation(); handleLogout(); }}>
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
                           <polyline points="16 17 21 12 16 7"></polyline>

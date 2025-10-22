@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useRoles } from '../../contexts/RolesContext';
 
 const UserForm = ({ 
   title, 
@@ -6,7 +7,9 @@ const UserForm = ({
   onSubmit, 
   onClose, 
   loading = false, 
-  isEdit = false 
+  isEdit = false,
+  onSuccess = null,
+  onError = null
 }) => {
   const [formData, setFormData] = useState({
     email: '',
@@ -17,7 +20,7 @@ const UserForm = ({
     roles: []
   });
   const [errors, setErrors] = useState({});
-  const [availableRoles] = useState(['Admin', 'User', 'Student', 'Teacher']);
+  const { roles: availableRoles, loading: rolesLoading, error: rolesError } = useRoles();
 
   // Initialize form data
   useEffect(() => {
@@ -104,19 +107,36 @@ const UserForm = ({
   };
 
   // Handle form submission
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (!validateForm()) {
       return;
     }
 
-    // Prepare data for submission
-    const submitData = isEdit
-      ? { fullname: formData.fullname, mssv: formData.mssv, roles: formData.roles }
-      : { ...formData };
+    try {
+      // Prepare data for submission
+      const submitData = isEdit
+        ? { fullname: formData.fullname, mssv: formData.mssv, roles: formData.roles }
+        : { ...formData };
 
-    onSubmit(submitData);
+      // Call the onSubmit function (which should be async)
+      await onSubmit(submitData);
+      
+      // Call success callback if provided
+      if (onSuccess) {
+        onSuccess();
+      }
+      
+      // Close form immediately
+      onClose();
+      
+    } catch (error) {
+      // Call error callback if provided
+      if (onError) {
+        onError(error);
+      }
+    }
   };
 
   return (
@@ -215,14 +235,23 @@ const UserForm = ({
               name="roles"
               value={formData.roles[0] || ''}
               onChange={handleRolesSelectChange}
-              disabled={loading}
+              disabled={loading || rolesLoading}
               className={`pretty-select ${errors.roles ? 'error' : ''}`}
             >
-              <option value="" disabled>Select a role</option>
+              <option value="" disabled>
+                {rolesLoading ? 'Loading roles...' : 'Select a role'}
+              </option>
               {availableRoles.map(role => (
-                <option key={role} value={role}>{role}</option>
+                <option key={role.id || role.Id} value={role.name || role.Name}>
+                  {role.name || role.Name}
+                </option>
               ))}
             </select>
+            {rolesError && (
+              <span className="error-message">
+                {rolesError} - Please refresh the page to try again.
+              </span>
+            )}
             {errors.roles && <span className="error-message">{errors.roles}</span>}
           </div>
 
@@ -238,7 +267,7 @@ const UserForm = ({
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={loading}
+              disabled={loading || rolesLoading}
             >
               {loading ? 'Processing...' : (isEdit ? 'Update' : 'Create')}
             </button>

@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { AdminDashboard, Login, Home } from './features';
-import { Register } from './features/authentication';
+import { Register, GoogleCallback } from './features/authentication';
 import { authApi } from './api';
+import { RolesProvider } from './contexts/RolesContext';
 // styles moved to global.css
 
 function App() {
@@ -43,20 +44,39 @@ function App() {
     })();
   }, []);
 
+  // Check if we're on the Google OAuth callback route
+  const isGoogleCallback = window.location.pathname === '/auth/google/callback' ||
+                           window.location.search.includes('code=');
+
   if (booting) return null;
-  if (isAdmin) return <AdminDashboard user={auth.user} />;
-  if (auth) return <Home />;
+  if (isAdmin) return (
+    <RolesProvider>
+      <AdminDashboard user={auth.user} />
+    </RolesProvider>
+  );
+  if (auth) return <Home user={auth.user} />;
+
+  // Handle Google OAuth callback
+  if (isGoogleCallback) {
+    return (
+      <div className="App">
+        <GoogleCallback onLogin={handleLoggedIn} />
+      </div>
+    );
+  }
 
   return (
-    <div className="App">
-      {mode === 'login' ? (
-        <Login onLogin={handleLoggedIn} onSwitchToRegister={() => setMode('register')} />
-      ) : (
-        <Register
-          onSwitchToLogin={() => setMode('login')}
-        />
-      )}
-    </div>
+    <RolesProvider>
+      <div className="App">
+        {mode === 'login' ? (
+          <Login onLogin={handleLoggedIn} onSwitchToRegister={() => setMode('register')} />
+        ) : (
+          <Register
+            onSwitchToLogin={() => setMode('login')}
+          />
+        )}
+      </div>
+    </RolesProvider>
   );
 }
 
