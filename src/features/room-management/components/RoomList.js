@@ -132,15 +132,24 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
       let roomData = [];
       let totalPagesFromApi = 1;
       let totalCountFromApi = 0;
+      const serverPaginatedRequested = filters.page !== undefined || filters.pageSize !== undefined;
 
       if (Array.isArray(roomList)) {
-        // If response is array, implement client-side pagination
-        roomData = roomList;
-        totalCountFromApi = roomList.length;
-        totalPagesFromApi = Math.max(1, Math.ceil(totalCountFromApi / pageSize));
-        const start = (page - 1) * pageSize;
-        const end = start + pageSize;
-        roomData = roomList.slice(start, end);
+        // If backend is already paginating (we sent Page/PageSize), do NOT slice again
+        if (serverPaginatedRequested) {
+          roomData = roomList;
+          // We'll compute total pages from the count endpoint below
+          totalCountFromApi = roomList.length;
+          totalPagesFromApi = 1; // temporary; will be overridden by derived calculation
+        } else {
+          // Backend ignored pagination; do client-side pagination
+          roomData = roomList;
+          totalCountFromApi = roomList.length;
+          totalPagesFromApi = Math.max(1, Math.ceil(totalCountFromApi / pageSize));
+          const start = (page - 1) * pageSize;
+          const end = start + pageSize;
+          roomData = roomList.slice(start, end);
+        }
       } else if (roomList?.data && Array.isArray(roomList.data)) {
         roomData = roomList.data;
         totalPagesFromApi = roomList.totalPages || 1;
@@ -157,11 +166,18 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
       const normalizedAvailableCount = typeof availableCount === 'number' ? availableCount : 
         (availableCount?.availableCount || availableCount?.AvailableCount || 0);
 
-      console.log('Normalized counts:', { normalizedTotalCount, normalizedAvailableCount });
+      // Determine if any filters (besides pagination) are applied
+      const hasNonPagingFilters = !!(filters.name || filters.location || filters.status !== '' || filters.minCapacity || filters.maxCapacity);
+
+      // Prefer backend total count when no non-paging filters are applied
+      const derivedTotalCount = (!hasNonPagingFilters && normalizedTotalCount) ? normalizedTotalCount : totalCountFromApi;
+      const derivedTotalPages = Math.max(1, Math.ceil((derivedTotalCount || 0) / pageSize));
+
+      console.log('Normalized counts:', { normalizedTotalCount, normalizedAvailableCount, derivedTotalCount, derivedTotalPages });
 
       setRooms(roomData);
-      setTotalPages(totalPagesFromApi);
-      setTotalRooms(totalCountFromApi);
+      setTotalPages(derivedTotalPages);
+      setTotalRooms(derivedTotalCount);
       setStats({ total: normalizedTotalCount, available: normalizedAvailableCount });
     } catch (err) {
       console.error('Error loading rooms:', err);
