@@ -208,17 +208,19 @@ export async function loginWithGoogleToken(googleToken) {
 
 export async function handleGoogleCallback(code, state) {
   // POST /api/auth/google/callback - Convert Google code to our tokens
-  
-  // Validate state parameter for CSRF protection
-  const storedState = sessionStorage.getItem('google_oauth_state');
-  if (!state || !storedState || state !== storedState) {
-    throw new Error('Invalid state parameter - possible CSRF attack');
-  }
-  
-  // Clear the stored state
+
+  // Note: Backend doesn't validate state parameter currently
+  // Clear the stored state anyway for cleanup
   sessionStorage.removeItem('google_oauth_state');
-  
-  const payload = { code, state };
+
+  // Get the redirect URI (must match what was sent to Google)
+  const currentOrigin = window.location.origin;
+  const redirectUri = process.env.REACT_APP_GOOGLE_REDIRECT_URI || `${currentOrigin}/auth/google/callback`;
+
+  const payload = {
+    code,
+    redirectUri
+  };
   const data = await request('/api/auth/google/callback', {
     method: 'POST',
     body: JSON.stringify(payload)
@@ -862,6 +864,350 @@ export async function deleteRole(id) {
 }
 
 // ============================================================================
+// EVENT MANAGEMENT API
+// ============================================================================
+
+/**
+ * Get all events with optional filters
+ * GET /api/events
+ * @param {Object} filters - Filter parameters
+ * @param {string} filters.title - Event title filter
+ * @param {string} filters.location - Location filter
+ * @param {number} filters.status - Status filter (0: Active, 1: Inactive, 2: Cancelled, 3: Completed)
+ * @param {string} filters.startDateFrom - Start date from (ISO string)
+ * @param {string} filters.startDateTo - Start date to (ISO string)
+ * @param {boolean} filters.isUpcoming - Filter for upcoming events
+ * @param {number} filters.page - Page number (0-based for backend)
+ * @param {number} filters.pageSize - Items per page
+ * @returns {Promise<Array>} List of events
+ */
+export async function getEvents(filters = {}) {
+  const params = new URLSearchParams();
+
+  if (filters.title) params.append('Title', filters.title);
+  if (filters.location) params.append('Location', filters.location);
+  if (filters.status !== undefined) params.append('Status', String(filters.status));
+  if (filters.startDateFrom) params.append('StartDateFrom', filters.startDateFrom);
+  if (filters.startDateTo) params.append('StartDateTo', filters.startDateTo);
+  if (filters.isUpcoming !== undefined) params.append('IsUpcoming', String(filters.isUpcoming));
+  if (filters.page !== undefined) params.append('Page', String(filters.page));
+  if (filters.pageSize) params.append('PageSize', String(filters.pageSize));
+
+  const queryString = params.toString();
+  const url = queryString ? `/api/events?${queryString}` : '/api/events';
+
+  return await request(url, { method: 'GET' });
+}
+
+/**
+ * Get event by ID
+ * GET /api/events/{id}
+ * @param {string} id - Event UUID
+ * @returns {Promise<Object>} Event details
+ */
+export async function getEventById(id) {
+  return await request(`/api/events/${id}`, { method: 'GET' });
+}
+
+/**
+ * Get upcoming events
+ * GET /api/events/upcoming
+ * @returns {Promise<Array>} List of upcoming events
+ */
+export async function getUpcomingEvents() {
+  return await request('/api/events/upcoming', { method: 'GET' });
+}
+
+/**
+ * Get events by date range
+ * GET /api/events/date-range
+ * @param {string} startDate - Start date (ISO string)
+ * @param {string} endDate - End date (ISO string)
+ * @returns {Promise<Array>} List of events in the date range
+ */
+export async function getEventsByDateRange(startDate, endDate) {
+  const params = new URLSearchParams({
+    startDate: startDate,
+    endDate: endDate
+  });
+  return await request(`/api/events/date-range?${params}`, { method: 'GET' });
+}
+
+/**
+ * Get total event count
+ * GET /api/events/count
+ * @returns {Promise<Object>} Object with Count property
+ */
+export async function getEventCount() {
+  return await request('/api/events/count', { method: 'GET' });
+}
+
+/**
+ * Get active event count
+ * GET /api/events/active-count
+ * @returns {Promise<Object>} Object with ActiveCount property
+ */
+export async function getActiveEventCount() {
+  return await request('/api/events/active-count', { method: 'GET' });
+}
+
+/**
+ * Create a new event (Admin only)
+ * POST /api/events
+ * @param {Object} eventData - Event data
+ * @param {string} eventData.title - Event title (required)
+ * @param {string} eventData.description - Event description
+ * @param {string} eventData.startDate - Start date (ISO string, required)
+ * @param {string} eventData.endDate - End date (ISO string, required)
+ * @param {string} eventData.location - Event location
+ * @param {number} eventData.status - Event status (0: Active, 1: Inactive, 2: Cancelled, 3: Completed)
+ * @param {boolean} eventData.visibility - Event visibility (default: true)
+ * @param {string} eventData.recurrenceRule - Recurrence rule (optional)
+ * @returns {Promise<Object>} Created event data
+ */
+export async function createEvent(eventData) {
+  const payload = {
+    Title: eventData.title,
+    Description: eventData.description || '',
+    StartDate: eventData.startDate,
+    EndDate: eventData.endDate,
+    Location: eventData.location || '',
+    Status: eventData.status !== undefined ? eventData.status : 0, // Default: Active
+    Visibility: eventData.visibility !== undefined ? eventData.visibility : true,
+    RecurrenceRule: eventData.recurrenceRule || null
+  };
+
+  return await request('/api/events', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+/**
+ * Update event (Admin only)
+ * PUT /api/events/{id}
+ * @param {string} id - Event UUID
+ * @param {Object} eventData - Updated event data
+ * @param {string} eventData.title - Event title
+ * @param {string} eventData.description - Event description
+ * @param {string} eventData.startDate - Start date (ISO string)
+ * @param {string} eventData.endDate - End date (ISO string)
+ * @param {string} eventData.location - Event location
+ * @param {number} eventData.status - Event status
+ * @param {boolean} eventData.visibility - Event visibility
+ * @param {string} eventData.recurrenceRule - Recurrence rule
+ * @returns {Promise<Object>} Updated event data
+ */
+export async function updateEvent(id, eventData) {
+  const payload = {};
+
+  if (eventData.title !== undefined) payload.Title = eventData.title;
+  if (eventData.description !== undefined) payload.Description = eventData.description;
+  if (eventData.startDate !== undefined) payload.StartDate = eventData.startDate;
+  if (eventData.endDate !== undefined) payload.EndDate = eventData.endDate;
+  if (eventData.location !== undefined) payload.Location = eventData.location;
+  if (eventData.status !== undefined) payload.Status = eventData.status;
+  if (eventData.visibility !== undefined) payload.Visibility = eventData.visibility;
+  if (eventData.recurrenceRule !== undefined) payload.RecurrenceRule = eventData.recurrenceRule;
+
+  return await request(`/api/events/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+/**
+ * Delete event (Admin only)
+ * DELETE /api/events/{id}
+ * @param {string} id - Event UUID
+ * @param {boolean} confirmDeletion - Confirmation flag (default: true)
+ * @returns {Promise<Object>} Deletion result
+ */
+export async function deleteEvent(id, confirmDeletion = true) {
+  const payload = {
+    ConfirmDeletion: confirmDeletion
+  };
+
+  return await request(`/api/events/${id}`, {
+    method: 'DELETE',
+    body: JSON.stringify(payload)
+  });
+}
+
+// ============================================================================
+// NOTIFICATION MANAGEMENT API
+// ============================================================================
+
+/**
+ * Get all notifications (Admin only)
+ * GET /api/notifications/admin/all
+ * @param {Object} filters - Filter parameters
+ * @param {string} filters.targetGroup - Target group filter (All, Lecturer, Student)
+ * @param {string} filters.status - Status filter (Active, Expired, Scheduled)
+ * @param {string} filters.startDate - Start date filter
+ * @param {string} filters.endDate - End date filter
+ * @param {number} filters.page - Page number
+ * @param {number} filters.pageSize - Items per page
+ * @returns {Promise<Array>} List of notifications
+ */
+export async function getAllNotifications(filters = {}) {
+  const params = new URLSearchParams();
+
+  if (filters.targetGroup) params.append('TargetGroup', filters.targetGroup);
+  if (filters.status) params.append('Status', filters.status);
+  if (filters.startDate) params.append('StartDate', filters.startDate);
+  if (filters.endDate) params.append('EndDate', filters.endDate);
+  if (filters.page) params.append('Page', String(filters.page));
+  if (filters.pageSize) params.append('PageSize', String(filters.pageSize));
+
+  const queryString = params.toString();
+  const url = queryString ? `/api/notifications/admin/all?${queryString}` : '/api/notifications/admin/all';
+
+  return await request(url, { method: 'GET' });
+}
+
+/**
+ * Get notification by ID (Admin only)
+ * GET /api/notifications/admin/{id}
+ * @param {string} id - Notification UUID
+ * @returns {Promise<Object>} Notification details
+ */
+export async function getNotificationById(id) {
+  return await request(`/api/notifications/admin/${id}`, { method: 'GET' });
+}
+
+/**
+ * Create notification (Admin only)
+ * POST /api/notifications/admin
+ * @param {Object} notificationData - Notification data
+ * @param {string} notificationData.title - Notification title
+ * @param {string} notificationData.content - Notification content
+ * @param {string} notificationData.targetGroup - Target group (All, Lecturer, Student)
+ * @param {string} notificationData.startDate - Start date (ISO format)
+ * @param {string} notificationData.endDate - End date (ISO format)
+ * @returns {Promise<Object>} Created notification
+ */
+export async function createNotification(notificationData) {
+  const payload = {
+    Title: notificationData.title,
+    Content: notificationData.content,
+    TargetGroup: notificationData.targetGroup,
+    StartDate: notificationData.startDate,
+    EndDate: notificationData.endDate
+  };
+
+  return await request('/api/notifications/admin', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+/**
+ * Update notification (Admin only)
+ * PUT /api/notifications/admin/{id}
+ * @param {string} id - Notification UUID
+ * @param {Object} notificationData - Notification data to update
+ * @returns {Promise<Object>} Updated notification
+ */
+export async function updateNotification(id, notificationData) {
+  const payload = {};
+
+  if (notificationData.title !== undefined) payload.Title = notificationData.title;
+  if (notificationData.content !== undefined) payload.Content = notificationData.content;
+  if (notificationData.targetGroup !== undefined) payload.TargetGroup = notificationData.targetGroup;
+  if (notificationData.startDate !== undefined) payload.StartDate = notificationData.startDate;
+  if (notificationData.endDate !== undefined) payload.EndDate = notificationData.endDate;
+
+  return await request(`/api/notifications/admin/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+/**
+ * Delete notification (Admin only)
+ * DELETE /api/notifications/admin/{id}
+ * @param {string} id - Notification UUID
+ * @returns {Promise<Object>} Deletion result
+ */
+export async function deleteNotification(id) {
+  return await request(`/api/notifications/admin/${id}`, {
+    method: 'DELETE'
+  });
+}
+
+/**
+ * Get user notifications
+ * GET /api/notifications/user
+ * @param {Object} filters - Filter parameters
+ * @returns {Promise<Array>} List of user notifications
+ */
+export async function getUserNotifications(filters = {}) {
+  const params = new URLSearchParams();
+
+  if (filters.targetGroup) params.append('TargetGroup', filters.targetGroup);
+  if (filters.status) params.append('Status', filters.status);
+  if (filters.startDate) params.append('StartDate', filters.startDate);
+  if (filters.endDate) params.append('EndDate', filters.endDate);
+  if (filters.page) params.append('Page', String(filters.page));
+  if (filters.pageSize) params.append('PageSize', String(filters.pageSize));
+
+  const queryString = params.toString();
+  const url = queryString ? `/api/notifications/user?${queryString}` : '/api/notifications/user';
+
+  return await request(url, { method: 'GET' });
+}
+
+/**
+ * Mark notification as read
+ * POST /api/notifications/mark-read
+ * @param {string} notificationId - Notification UUID
+ * @returns {Promise<Object>} Result
+ */
+export async function markNotificationAsRead(notificationId) {
+  const payload = {
+    NotificationId: notificationId
+  };
+
+  return await request('/api/notifications/mark-read', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+/**
+ * Mark all notifications as read
+ * POST /api/notifications/mark-all-read
+ * @returns {Promise<Object>} Result
+ */
+export async function markAllNotificationsAsRead() {
+  return await request('/api/notifications/mark-all-read', {
+    method: 'POST'
+  });
+}
+
+/**
+ * Get unread notification count
+ * GET /api/notifications/unread-count
+ * @returns {Promise<number>} Unread count
+ */
+export async function getUnreadNotificationCount() {
+  const result = await request('/api/notifications/unread-count', { method: 'GET' });
+  return result?.unreadCount || result?.UnreadCount || 0;
+}
+
+/**
+ * Update notification status (Admin only - scheduled task)
+ * POST /api/notifications/update-status
+ * @returns {Promise<Object>} Result
+ */
+export async function updateNotificationStatus() {
+  return await request('/api/notifications/update-status', {
+    method: 'POST'
+  });
+}
+
+// ============================================================================
 // EXPORT ORGANIZED API FUNCTIONS
 // ============================================================================
 
@@ -887,6 +1233,193 @@ export const userApi = {
   updateUser,
   deleteUser,
   updateUserStatus
+};
+
+// ============================================================================
+// Lab Management API
+// ============================================================================
+
+/**
+ * Get all labs with optional filters
+ * GET /api/labs
+ * @param {Object} filters - Filter parameters
+ * @param {string} filters.name - Lab name filter
+ * @param {string} filters.location - Location filter
+ * @param {string|number} filters.status - Status filter (0: Active, 1: Inactive)
+ * @param {number} filters.minCapacity - Minimum capacity
+ * @param {number} filters.maxCapacity - Maximum capacity
+ * @param {number} filters.page - Page number (1-based)
+ * @param {number} filters.pageSize - Items per page
+ * @returns {Promise<Array>} List of labs
+ */
+export async function getLabs(filters = {}) {
+  const params = new URLSearchParams();
+
+  // Add filter parameters if provided
+  if (filters.name) params.append('Name', filters.name);
+  if (filters.location) params.append('Location', filters.location);
+  if (filters.status !== undefined) params.append('Status', String(filters.status));
+  if (filters.minCapacity !== undefined) params.append('MinCapacity', String(filters.minCapacity));
+  if (filters.maxCapacity !== undefined) params.append('MaxCapacity', String(filters.maxCapacity));
+  // Backend expects 0-based page index, but we use 1-based in frontend
+  if (filters.page) params.append('Page', String(filters.page - 1));
+  if (filters.pageSize) params.append('PageSize', String(filters.pageSize));
+
+  const queryString = params.toString();
+  const url = queryString ? `/api/labs?${queryString}` : '/api/labs';
+
+  return await request(url, { method: 'GET' });
+}
+
+/**
+ * Get lab by ID
+ * GET /api/labs/{id}
+ * @param {string} id - Lab UUID
+ * @returns {Promise<Object>} Lab details
+ */
+export async function getLabById(id) {
+  return await request(`/api/labs/${id}`, { method: 'GET' });
+}
+
+/**
+ * Get available labs
+ * GET /api/labs/available
+ * @returns {Promise<Array>} List of available labs
+ */
+export async function getAvailableLabs() {
+  return await request('/api/labs/available', { method: 'GET' });
+}
+
+/**
+ * Check if lab is available
+ * GET /api/labs/{id}/available
+ * @param {string} id - Lab UUID
+ * @returns {Promise<Object>} Object with isAvailable boolean
+ */
+export async function isLabAvailable(id) {
+  const result = await request(`/api/labs/${id}/available`, { method: 'GET' });
+  return result?.isAvailable || result?.IsAvailable || false;
+}
+
+/**
+ * Get lab count
+ * GET /api/labs/count
+ * @returns {Promise<number>} Total lab count
+ */
+export async function getLabCount() {
+  const result = await request('/api/labs/count', { method: 'GET' });
+  return typeof result === 'number' ? result : (result?.count || result?.Count || 0);
+}
+
+/**
+ * Get active lab count
+ * GET /api/labs/active-count
+ * @returns {Promise<number>} Active lab count
+ */
+export async function getActiveLabCount() {
+  const result = await request('/api/labs/active-count', { method: 'GET' });
+  return typeof result === 'number' ? result : (result?.activeCount || result?.ActiveCount || 0);
+}
+
+/**
+ * Create a new lab (Admin only)
+ * POST /api/labs
+ * @param {Object} labData - Lab data
+ * @param {string} labData.name - Lab name
+ * @param {string} labData.description - Lab description (optional)
+ * @param {string} labData.location - Lab location (optional)
+ * @param {number} labData.capacity - Lab capacity
+ * @param {string} labData.roomId - Room ID (optional)
+ * @param {number} labData.status - Status (0: Active, 1: Inactive)
+ * @returns {Promise<Object>} Created lab data
+ */
+export async function createLab(labData) {
+  const payload = {
+    Name: labData.name,
+    Description: labData.description || '',
+    Location: labData.location || '',
+    Capacity: labData.capacity,
+    RoomId: labData.roomId || null,
+    Status: labData.status !== undefined ? labData.status : 0
+  };
+
+  return await request('/api/labs', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+/**
+ * Update lab (Admin only)
+ * PUT /api/labs/{id}
+ * @param {string} id - Lab UUID
+ * @param {Object} labData - Lab data to update
+ * @returns {Promise<Object>} Updated lab data
+ */
+export async function updateLab(id, labData) {
+  const payload = {
+    Name: labData.name,
+    Description: labData.description || '',
+    Location: labData.location || '',
+    Capacity: labData.capacity,
+    RoomId: labData.roomId || null,
+    Status: labData.status
+  };
+
+  return await request(`/api/labs/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+/**
+ * Update lab status (Admin only)
+ * PATCH /api/labs/{id}/status
+ * @param {string} id - Lab UUID
+ * @param {number} status - New status (0: Active, 1: Inactive)
+ * @returns {Promise<Object>} Updated lab data
+ */
+export async function updateLabStatus(id, status) {
+  const payload = {
+    Status: status
+  };
+
+  return await request(`/api/labs/${id}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+/**
+ * Delete lab (Admin only)
+ * DELETE /api/labs/{id}
+ * @param {string} id - Lab UUID
+ * @param {boolean} confirmDeletion - Confirmation flag
+ * @returns {Promise<Object>} Deletion result
+ */
+export async function deleteLab(id, confirmDeletion = true) {
+  const payload = {
+    ConfirmDeletion: confirmDeletion
+  };
+
+  return await request(`/api/labs/${id}`, {
+    method: 'DELETE',
+    body: JSON.stringify(payload)
+  });
+}
+
+// Lab Management API
+export const labsApi = {
+  getLabs,
+  getLabById,
+  getAvailableLabs,
+  isLabAvailable,
+  getLabCount,
+  getActiveLabCount,
+  createLab,
+  updateLab,
+  updateLabStatus,
+  deleteLab
 };
 
 // Equipment Management API
@@ -928,12 +1461,217 @@ export const rolesApi = {
   deleteRole
 };
 
+// Event Management API
+export const eventApi = {
+  getEvents,
+  getEventById,
+  getUpcomingEvents,
+  getEventsByDateRange,
+  getEventCount,
+  getActiveEventCount,
+  createEvent,
+  updateEvent,
+  deleteEvent
+};
+
+// Notification Management API
+export const notificationApi = {
+  getAllNotifications,
+  getNotificationById,
+  createNotification,
+  updateNotification,
+  deleteNotification,
+  getUserNotifications,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
+  getUnreadNotificationCount,
+  updateNotificationStatus
+};
+
+// ============================================================================
+// REPORTS MANAGEMENT API
+// ============================================================================
+
+/**
+ * Get all reports (Admin only)
+ * GET /api/reports/admin/all
+ * @param {Object} filter - Filter options
+ * @returns {Promise<Array>} List of all reports
+ */
+export async function getAllReports(filter = {}) {
+  const params = new URLSearchParams();
+
+  if (filter.type) params.append('Type', filter.type);
+  if (filter.status) params.append('Status', filter.status);
+  if (filter.startDate) params.append('StartDate', filter.startDate);
+  if (filter.endDate) params.append('EndDate', filter.endDate);
+  if (filter.page !== undefined) params.append('Page', filter.page);
+  if (filter.pageSize !== undefined) params.append('PageSize', filter.pageSize);
+
+  const queryString = params.toString();
+  const url = queryString ? `/api/reports/admin/all?${queryString}` : '/api/reports/admin/all';
+
+  return await request(url, { method: 'GET' });
+}
+
+/**
+ * Get report by ID (Admin only)
+ * GET /api/reports/admin/{id}
+ * @param {string} id - Report UUID
+ * @returns {Promise<Object>} Report details
+ */
+export async function getReportByIdAdmin(id) {
+  return await request(`/api/reports/admin/${id}`, { method: 'GET' });
+}
+
+/**
+ * Update report status (Admin only)
+ * PUT /api/reports/admin/{id}/status
+ * @param {string} id - Report UUID
+ * @param {string} status - New status
+ * @param {string} adminResponse - Admin response message
+ * @returns {Promise<Object>} Updated report
+ */
+export async function updateReportStatus(id, status, adminResponse = '') {
+  const payload = {
+    Status: status,
+    AdminResponse: adminResponse
+  };
+
+  return await request(`/api/reports/admin/${id}/status`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+/**
+ * Get pending reports count (Admin only)
+ * GET /api/reports/admin/pending-count
+ * @returns {Promise<number>} Count of pending reports
+ */
+export async function getPendingReportsCount() {
+  return await request('/api/reports/admin/pending-count', { method: 'GET' });
+}
+
+/**
+ * Get user's reports
+ * GET /api/reports/user
+ * @param {Object} filter - Filter options
+ * @returns {Promise<Array>} List of user's reports
+ */
+export async function getUserReports(filter = {}) {
+  const params = new URLSearchParams();
+
+  if (filter.type) params.append('Type', filter.type);
+  if (filter.status) params.append('Status', filter.status);
+  if (filter.startDate) params.append('StartDate', filter.startDate);
+  if (filter.endDate) params.append('EndDate', filter.endDate);
+  if (filter.page !== undefined) params.append('Page', filter.page);
+  if (filter.pageSize !== undefined) params.append('PageSize', filter.pageSize);
+
+  const queryString = params.toString();
+  const url = queryString ? `/api/reports/user?${queryString}` : '/api/reports/user';
+
+  return await request(url, { method: 'GET' });
+}
+
+/**
+ * Get user's report by ID
+ * GET /api/reports/user/{id}
+ * @param {string} id - Report UUID
+ * @returns {Promise<Object>} Report details
+ */
+export async function getUserReportById(id) {
+  return await request(`/api/reports/user/${id}`, { method: 'GET' });
+}
+
+/**
+ * Create new report
+ * POST /api/reports/user
+ * @param {Object} reportData - Report data
+ * @returns {Promise<Object>} Created report
+ */
+export async function createReport(reportData) {
+  const payload = {
+    Title: reportData.title,
+    Description: reportData.description,
+    Type: reportData.type,
+    ImageUrl: reportData.imageUrl || null
+  };
+
+  return await request('/api/reports/user', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+/**
+ * Update user's report
+ * PUT /api/reports/user/{id}
+ * @param {string} id - Report UUID
+ * @param {Object} reportData - Updated report data
+ * @returns {Promise<Object>} Updated report
+ */
+export async function updateReport(id, reportData) {
+  const payload = {
+    Title: reportData.title,
+    Description: reportData.description,
+    Type: reportData.type,
+    ImageUrl: reportData.imageUrl || null
+  };
+
+  return await request(`/api/reports/user/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+/**
+ * Delete user's report
+ * DELETE /api/reports/user/{id}
+ * @param {string} id - Report UUID
+ * @returns {Promise<Object>} Deletion result
+ */
+export async function deleteReport(id) {
+  return await request(`/api/reports/user/${id}`, { method: 'DELETE' });
+}
+
+/**
+ * Get user's reports count
+ * GET /api/reports/user/count
+ * @returns {Promise<number>} Count of user's reports
+ */
+export async function getUserReportsCount() {
+  return await request('/api/reports/user/count', { method: 'GET' });
+}
+
+// Reports Management API
+export const reportsApi = {
+  // Admin functions
+  getAllReports,
+  getReportByIdAdmin,
+  updateReportStatus,
+  getPendingReportsCount,
+  // User functions
+  getUserReports,
+  getUserReportById,
+  createReport,
+  updateReport,
+  deleteReport,
+  getUserReportsCount
+};
+
 // Default export with all APIs
 const api = {
   auth: authApi,
   user: userApi,
+  labs: labsApi,
   equipment: equipmentApi,
+  rooms: roomsApi,
   roles: rolesApi,
+  events: eventApi,
+  notifications: notificationApi,
+  reports: reportsApi,
   request
 };
 

@@ -29,10 +29,25 @@ function Login({ onLogin, onSwitchToRegister }) {
     }
   };
 
-  const handleGoogleLogin = () => {
-    // Redirect to Google OAuth start endpoint
-    const googleLoginUrl = authApi.getGoogleLoginUrl();
-    window.location.href = googleLoginUrl;
+  const handleGoogleLogin = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      // Call backend to get Google authorization URL
+      const googleLoginUrl = authApi.getGoogleLoginUrl();
+      const response = await fetch(googleLoginUrl);
+      const result = await response.json();
+
+      if (result.code === 200 && result.data?.authorizationUrl) {
+        // Redirect to Google's authorization page
+        window.location.href = result.data.authorizationUrl;
+      } else {
+        throw new Error('Failed to get Google authorization URL');
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to initiate Google sign-in');
+      setLoading(false);
+    }
   };
 
   // Demo filler removed to avoid unused variable warning
