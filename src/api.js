@@ -1024,13 +1024,12 @@ export async function updateEvent(id, eventData) {
  * @returns {Promise<Object>} Deletion result
  */
 export async function deleteEvent(id, confirmDeletion = true) {
-  const payload = {
-    ConfirmDeletion: confirmDeletion
-  };
+  // Use query parameter instead of body for DELETE requests
+  const params = new URLSearchParams();
+  params.append('confirmDeletion', confirmDeletion.toString());
 
-  return await request(`/api/events/${id}`, {
-    method: 'DELETE',
-    body: JSON.stringify(payload)
+  return await request(`/api/events/${id}?${params.toString()}`, {
+    method: 'DELETE'
   });
 }
 
@@ -1661,6 +1660,118 @@ export const reportsApi = {
   getUserReportsCount
 };
 
+// ============================================================================
+// BOOKING MANAGEMENT API
+// ============================================================================
+
+/**
+ * Get all bookings with optional filters
+ * GET /api/bookings
+ * @param {Object} filters - Filter parameters
+ * @param {string} filters.roomId - Room ID filter (UUID)
+ * @param {string} filters.userId - User ID filter (UUID)
+ * @param {number} filters.status - Status filter (0: Pending, 1: Approved, 2: Rejected, 3: Cancelled)
+ * @param {string} filters.from - Start date filter (ISO string)
+ * @param {string} filters.to - End date filter (ISO string)
+ * @param {number} filters.page - Page number (0-based for backend)
+ * @param {number} filters.pageSize - Items per page
+ * @returns {Promise<Array>} List of bookings
+ */
+export async function getBookings(filters = {}) {
+  const params = new URLSearchParams();
+
+  if (filters.roomId) params.append('RoomId', filters.roomId);
+  if (filters.userId) params.append('UserId', filters.userId);
+  if (filters.status !== undefined) params.append('Status', String(filters.status));
+  if (filters.from) params.append('From', filters.from);
+  if (filters.to) params.append('To', filters.to);
+  if (filters.page !== undefined) params.append('Page', String(filters.page));
+  if (filters.pageSize) params.append('PageSize', String(filters.pageSize));
+
+  const queryString = params.toString();
+  const url = queryString ? `/api/bookings?${queryString}` : '/api/bookings';
+
+  return await request(url, { method: 'GET' });
+}
+
+/**
+ * Get booking by ID
+ * GET /api/bookings/{id}
+ * @param {string} id - Booking UUID
+ * @returns {Promise<Object>} Booking details
+ */
+export async function getBookingById(id) {
+  return await request(`/api/bookings/${id}`, { method: 'GET' });
+}
+
+/**
+ * Create a new booking
+ * POST /api/bookings
+ * @param {Object} bookingData - Booking data
+ * @param {string} bookingData.roomId - Room ID (UUID)
+ * @param {string} bookingData.startTime - Start time (ISO string)
+ * @param {string} bookingData.endTime - End time (ISO string)
+ * @param {string} bookingData.purpose - Booking purpose
+ * @param {string} [bookingData.eventId] - Optional event ID (UUID)
+ * @param {string} [bookingData.notes] - Optional notes
+ * @returns {Promise<Object>} Created booking data
+ */
+export async function createBooking(bookingData) {
+  const payload = {
+    RoomId: bookingData.roomId,
+    StartTime: bookingData.startTime,
+    EndTime: bookingData.endTime,
+    Purpose: bookingData.purpose,
+    EventId: bookingData.eventId || null,
+    Notes: bookingData.notes || null
+  };
+
+  return await request('/api/bookings', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+/**
+ * Update booking status
+ * PATCH /api/bookings/{id}/status
+ * @param {string} id - Booking UUID
+ * @param {Object} statusData - Status update data
+ * @param {number} statusData.status - New status (0: Pending, 1: Approved, 2: Rejected, 3: Cancelled)
+ * @param {string} statusData.notes - Optional notes about status change
+ * @returns {Promise<Object>} Updated booking data
+ */
+export async function updateBookingStatus(id, statusData) {
+  const payload = {
+    Status: statusData.status,
+    Notes: statusData.notes || null
+  };
+
+  return await request(`/api/bookings/${id}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+/**
+ * Delete booking
+ * DELETE /api/bookings/{id}
+ * @param {string} id - Booking UUID
+ * @returns {Promise<Object>} Deletion result
+ */
+export async function deleteBooking(id) {
+  return await request(`/api/bookings/${id}`, { method: 'DELETE' });
+}
+
+// Booking Management API
+export const bookingApi = {
+  getBookings,
+  getBookingById,
+  createBooking,
+  updateBookingStatus,
+  deleteBooking
+};
+
 // Default export with all APIs
 const api = {
   auth: authApi,
@@ -1672,6 +1783,7 @@ const api = {
   events: eventApi,
   notifications: notificationApi,
   reports: reportsApi,
+  bookings: bookingApi,
   request
 };
 

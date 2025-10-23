@@ -214,38 +214,40 @@ const CreateEvent = ({ onNavigateBack, onSuccess }) => {
                 {errors.endDate && <span className="error-message">{errors.endDate}</span>}
               </div>
 
-              {/* Status */}
-              <div className="form-group">
-                <label htmlFor="status">
-                  Status
-                </label>
-                <select
-                  id="status"
-                  name="status"
-                  value={formData.status}
-                  onChange={handleChange}
-                  disabled={loading}
-                >
-                  {EVENT_STATUS_OPTIONS.map(option => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Visibility */}
-              <div className="form-group">
-                <label className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    name="visibility"
-                    checked={formData.visibility}
-                    onChange={handleChange}
-                    disabled={loading}
-                  />
-                  <span>Public Event (visible to all users)</span>
-                </label>
+              {/* Status and Visibility */}
+              <div className="form-group full-width">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 0.375rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <label htmlFor="status" style={{ marginBottom: '0.5rem' }}>
+                      Status
+                    </label>
+                    <select
+                      id="status"
+                      name="status"
+                      value={formData.status}
+                      onChange={handleChange}
+                      disabled={loading}
+                    >
+                      {EVENT_STATUS_OPTIONS.map(option => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                    <label className="checkbox-label" style={{ marginBottom: '0', paddingTop: '1.875rem' }}>
+                      <input
+                        type="checkbox"
+                        name="visibility"
+                        checked={formData.visibility}
+                        onChange={handleChange}
+                        disabled={loading}
+                      />
+                      <span>Public Event (visible to all users)</span>
+                    </label>
+                  </div>
+                </div>
               </div>
 
               {/* Recurrence Rule */}

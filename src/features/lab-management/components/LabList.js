@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { labsApi, authApi } from '../../../api';
 import LabStatusForm from '../admin/LabStatusForm';
-import CreateLab from '../admin/CreateLab';
-import EditLab from '../admin/EditLab';
 
 /**
  * Lab List Component - Common for both Admin and Lecturer
@@ -16,7 +14,15 @@ import EditLab from '../admin/EditLab';
  * Related Use Cases:
  * - UC-10: Manage Labs (Admin)
  */
-const LabList = ({ userRole = 'Student', onSelectLab, onViewLab }) => {
+const LabList = ({ 
+  userRole = 'Student', 
+  onSelectLab, 
+  onViewLab, 
+  onCreateLab,
+  onEditLab,
+  initialToast,
+  onToastShown
+}) => {
   const [labs, setLabs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [paginationLoading, setPaginationLoading] = useState(false);
@@ -30,8 +36,6 @@ const LabList = ({ userRole = 'Student', onSelectLab, onViewLab }) => {
   const [toast, setToast] = useState(null);
 
   // Modal states
-  const [showCreatePage, setShowCreatePage] = useState(false);
-  const [showEditPage, setShowEditPage] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [selectedLab, setSelectedLab] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -55,6 +59,16 @@ const LabList = ({ userRole = 'Student', onSelectLab, onViewLab }) => {
     window.clearTimeout(showToast._tid);
     showToast._tid = window.setTimeout(() => setToast(null), 3000);
   };
+
+  // Handle initialToast prop
+  useEffect(() => {
+    if (initialToast) {
+      setToast(initialToast);
+      if (onToastShown) {
+        onToastShown();
+      }
+    }
+  }, [initialToast, onToastShown]);
 
   // Load lab data with pagination
   const loadLabs = useCallback(async (page = currentPage, isPagination = false) => {
@@ -214,28 +228,16 @@ const LabList = ({ userRole = 'Student', onSelectLab, onViewLab }) => {
   };
 
   // CRUD operation handlers
-  const handleCreateLabSuccess = async () => {
-    setShowCreatePage(false);
-    showToast('Lab created successfully!', 'success');
-    await loadLabs(currentPage);
-  };
-
-  const handleEditLabSuccess = async () => {
-    setShowEditPage(false);
-    setSelectedLab(null);
-    showToast('Lab updated successfully!', 'success');
-    await loadLabs(currentPage);
-  };
 
   const handleDeleteLab = async (labId) => {
     const labToDelete = labs.find(l => l.id === labId);
-    
+
     // Remove from UI immediately
     setLabs(prev => prev.filter(lab => lab.id !== labId));
     setTotalLabs(prev => prev - 1);
 
     try {
-      await labsApi.deleteLab(labId, { reason: 'Admin deletion' });
+      await labsApi.deleteLab(labId, true);
       setConfirmDeleteLab(null);
       showToast('Lab deleted successfully!', 'success');
     } catch (err) {
@@ -288,8 +290,9 @@ const LabList = ({ userRole = 'Student', onSelectLab, onViewLab }) => {
 
   // Open edit page
   const openEditPage = (lab) => {
-    setSelectedLab(lab);
-    setShowEditPage(true);
+    if (onEditLab) {
+      onEditLab(lab.id);
+    }
   };
 
   // Open status modal
@@ -344,21 +347,13 @@ const LabList = ({ userRole = 'Student', onSelectLab, onViewLab }) => {
 
   return (
     <div className="lab-list-container">
-      {showCreatePage ? (
-        <CreateLab onNavigateBack={() => setShowCreatePage(false)} onSuccess={handleCreateLabSuccess} />
-      ) : showEditPage ? (
-        <EditLab lab={selectedLab} onNavigateBack={() => {
-          setShowEditPage(false);
-          setSelectedLab(null);
-        }} onSuccess={handleEditLabSuccess} />
-      ) : (
-        <>
+      <>
           <div className="lab-list-header">
             <h2>Lab Management</h2>
             {isAdmin && (
               <button 
                 className="btn-new-booking"
-                onClick={() => setShowCreatePage(true)}
+                onClick={() => onCreateLab && onCreateLab()}
                 disabled={actionLoading}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -708,10 +703,7 @@ const LabList = ({ userRole = 'Student', onSelectLab, onViewLab }) => {
               )}
             </button>
           </div>
-
-        </>
-      )}
-
+      </>
       {/* Modals */}
 
       {showStatusModal && selectedLab && (

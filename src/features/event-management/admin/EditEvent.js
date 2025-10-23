@@ -18,7 +18,8 @@ import { EVENT_STATUS_OPTIONS } from '../../../constants/eventConstants';
  * - Visibility toggle
  * - Recurrence rule support
  */
-const EditEvent = ({ event, onNavigateBack, onSuccess }) => {
+const EditEvent = ({ event, eventId, onNavigateBack, onSuccess }) => {
+  const [eventData, setEventData] = useState(event);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -32,9 +33,32 @@ const EditEvent = ({ event, onNavigateBack, onSuccess }) => {
 
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+  const [fetchingEvent, setFetchingEvent] = useState(false);
+
+  // Fetch event data if eventId is provided
+  useEffect(() => {
+    const fetchEvent = async () => {
+      if (eventId && !event) {
+        try {
+          setFetchingEvent(true);
+          const fetchedEvent = await eventApi.getEventById(eventId);
+          setEventData(fetchedEvent);
+        } catch (err) {
+          console.error('Failed to fetch event:', err);
+          setErrors({ submit: 'Failed to load event data' });
+        } finally {
+          setFetchingEvent(false);
+        }
+      } else if (event) {
+        setEventData(event);
+      }
+    };
+
+    fetchEvent();
+  }, [eventId, event]);
 
   useEffect(() => {
-    if (event) {
+    if (eventData) {
       // Convert dates to datetime-local format
       const formatDateForInput = (dateString) => {
         if (!dateString) return '';
@@ -48,19 +72,19 @@ const EditEvent = ({ event, onNavigateBack, onSuccess }) => {
       };
 
       setFormData({
-        title: event.title || '',
-        description: event.description || '',
-        location: event.location || '',
-        startDate: formatDateForInput(event.startDate),
-        endDate: formatDateForInput(event.endDate),
-        status: typeof event.status === 'string' 
-          ? EVENT_STATUS_OPTIONS.find(opt => opt.label === event.status)?.value || 0
-          : event.status || 0,
-        visibility: event.visibility !== undefined ? event.visibility : true,
-        recurrenceRule: event.recurrenceRule || ''
+        title: eventData.title || '',
+        description: eventData.description || '',
+        location: eventData.location || '',
+        startDate: formatDateForInput(eventData.startDate),
+        endDate: formatDateForInput(eventData.endDate),
+        status: typeof eventData.status === 'string' 
+          ? EVENT_STATUS_OPTIONS.find(opt => opt.label === eventData.status)?.value || 0
+          : eventData.status || 0,
+        visibility: eventData.visibility !== undefined ? eventData.visibility : true,
+        recurrenceRule: eventData.recurrenceRule || ''
       });
     }
-  }, [event]);
+  }, [eventData]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -123,7 +147,12 @@ const EditEvent = ({ event, onNavigateBack, onSuccess }) => {
         recurrenceRule: formData.recurrenceRule.trim() || null
       };
 
-      await eventApi.updateEvent(event.id, submitData);
+      const targetEventId = eventId || eventData?.id;
+      if (!targetEventId) {
+        throw new Error('Event ID is required');
+      }
+
+      await eventApi.updateEvent(targetEventId, submitData);
 
       // Navigate back to event list with success message
       if (onSuccess) {
@@ -145,7 +174,37 @@ const EditEvent = ({ event, onNavigateBack, onSuccess }) => {
     }
   };
 
-  if (!event) {
+  if (fetchingEvent) {
+    return (
+      <div className="create-room-page">
+        <div className="page-header">
+          <div className="header-content">
+            <button 
+              className="back-button"
+              onClick={handleCancel}
+              title="Back to Event List"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 12H5"></path>
+                <path d="M12 19l-7-7 7-7"></path>
+              </svg>
+            </button>
+            <h1>Edit Event</h1>
+          </div>
+        </div>
+        <div className="page-content">
+          <div className="form-container">
+            <div className="loading">
+              <div className="loading-spinner"></div>
+              Loading event data...
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!eventData) {
     return (
       <div className="create-room-page">
         <div className="page-header">
@@ -267,38 +326,40 @@ const EditEvent = ({ event, onNavigateBack, onSuccess }) => {
                 {errors.endDate && <span className="error-message">{errors.endDate}</span>}
               </div>
 
-              {/* Status */}
-              <div className="form-group">
-                <label htmlFor="status">
-                  Status
-                </label>
-                <select
-                  id="status"
-                  name="status"
-                  value={formData.status}
-                  onChange={handleChange}
-                  disabled={loading}
-                >
-                  {EVENT_STATUS_OPTIONS.map(option => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Visibility */}
-              <div className="form-group">
-                <label className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    name="visibility"
-                    checked={formData.visibility}
-                    onChange={handleChange}
-                    disabled={loading}
-                  />
-                  <span>Public Event (visible to all users)</span>
-                </label>
+              {/* Status and Visibility */}
+              <div className="form-group full-width">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 0.375rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <label htmlFor="status" style={{ marginBottom: '0.5rem' }}>
+                      Status
+                    </label>
+                    <select
+                      id="status"
+                      name="status"
+                      value={formData.status}
+                      onChange={handleChange}
+                      disabled={loading}
+                    >
+                      {EVENT_STATUS_OPTIONS.map(option => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                    <label className="checkbox-label" style={{ marginBottom: '0', paddingTop: '1.875rem' }}>
+                      <input
+                        type="checkbox"
+                        name="visibility"
+                        checked={formData.visibility}
+                        onChange={handleChange}
+                        disabled={loading}
+                      />
+                      <span>Public Event (visible to all users)</span>
+                    </label>
+                  </div>
+                </div>
               </div>
 
               {/* Recurrence Rule */}
@@ -315,9 +376,9 @@ const EditEvent = ({ event, onNavigateBack, onSuccess }) => {
                   placeholder="E.g.: FREQ=WEEKLY;BYDAY=MO,WE,FR"
                   disabled={loading}
                 />
-                <p className="field-hint">
+                {/* <p className="field-hint">
                   Use iCalendar RRULE format for recurring events
-                </p>
+                </p> */}
               </div>
 
               {/* Description */}

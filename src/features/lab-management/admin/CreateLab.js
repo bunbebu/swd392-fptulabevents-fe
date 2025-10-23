@@ -1,29 +1,13 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import { labsApi } from '../../../api';
-import {
-  uploadImage,
-  validateImageFile,
-  isStorageAvailable,
-  createPreviewUrl,
-  revokePreviewUrl,
-  formatFileSize
-} from '../../../utils/imageUpload';
 
 /**
  * Create Lab Page Component - Admin Only
  *
- * Dedicated page for creating new lab with image upload support
+ * Dedicated page for creating new lab
  *
  * Related Use Cases:
  * - UC-10: Manage Labs (Admin)
- * - UC-16: Upload Event Cover Image (adapted for labs)
- *
- * Features:
- * - File upload to Firebase Storage
- * - Image preview
- * - Upload progress tracking
- * - File validation (type, size)
- * - Fallback to URL input if Firebase is not configured
  */
 const CreateLab = ({ onNavigateBack, onSuccess }) => {
 
@@ -31,29 +15,11 @@ const CreateLab = ({ onNavigateBack, onSuccess }) => {
     name: '',
     description: '',
     location: '',
-    capacity: 1,
-    imageUrl: ''
+    capacity: 1
   });
 
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
-
-  // Image upload states
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState('');
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [isUploading, setIsUploading] = useState(false);
-  const [useUrlInput, setUseUrlInput] = useState(!isStorageAvailable());
-  const fileInputRef = useRef(null);
-
-  // Cleanup preview URL on unmount
-  useEffect(() => {
-    return () => {
-      if (previewUrl) {
-        revokePreviewUrl(previewUrl);
-      }
-    };
-  }, [previewUrl]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -65,51 +31,6 @@ const CreateLab = ({ onNavigateBack, onSuccess }) => {
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
-  };
-
-  const handleFileSelect = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    // Validate file
-    const validation = validateImageFile(file);
-    if (!validation.valid) {
-      setErrors(prev => ({ ...prev, imageUrl: validation.error }));
-      return;
-    }
-
-    // Clear previous preview
-    if (previewUrl) {
-      revokePreviewUrl(previewUrl);
-    }
-
-    // Set selected file and create preview
-    setSelectedFile(file);
-    const preview = createPreviewUrl(file);
-    setPreviewUrl(preview);
-
-    // Clear any previous errors
-    setErrors(prev => ({ ...prev, imageUrl: '' }));
-  };
-
-  const handleRemoveImage = () => {
-    if (previewUrl) {
-      revokePreviewUrl(previewUrl);
-    }
-    setSelectedFile(null);
-    setPreviewUrl('');
-    setFormData(prev => ({ ...prev, imageUrl: '' }));
-    setUploadProgress(0);
-
-    // Reset file input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  const handleToggleInputMode = () => {
-    handleRemoveImage();
-    setUseUrlInput(!useUrlInput);
   };
 
   const validate = () => {
@@ -127,21 +48,8 @@ const CreateLab = ({ onNavigateBack, onSuccess }) => {
       newErrors.capacity = 'Capacity must be at least 1';
     }
 
-    if (formData.imageUrl && !isValidUrl(formData.imageUrl)) {
-      newErrors.imageUrl = 'Please enter a valid URL';
-    }
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  };
-
-  const isValidUrl = (string) => {
-    try {
-      new URL(string);
-      return true;
-    } catch (_) {
-      return false;
-    }
   };
 
   const handleSubmit = async (e) => {
@@ -153,38 +61,15 @@ const CreateLab = ({ onNavigateBack, onSuccess }) => {
 
     try {
       setLoading(true);
-      let imageUrl = formData.imageUrl.trim();
-
-      // If a file is selected, upload it first
-      if (selectedFile && !useUrlInput) {
-        try {
-          setIsUploading(true);
-          imageUrl = await uploadImage(selectedFile, 'labs', (progress) => {
-            setUploadProgress(progress);
-          });
-          setIsUploading(false);
-        } catch (uploadError) {
-          setIsUploading(false);
-          setErrors({ submit: uploadError.message || 'Failed to upload image' });
-          setLoading(false);
-          return;
-        }
-      }
 
       const submitData = {
         name: formData.name.trim(),
         description: formData.description.trim(),
         location: formData.location.trim(),
-        capacity: parseInt(formData.capacity),
-        imageUrl: imageUrl || null
+        capacity: parseInt(formData.capacity)
       };
 
       await labsApi.createLab(submitData);
-
-      // Cleanup preview URL
-      if (previewUrl) {
-        revokePreviewUrl(previewUrl);
-      }
 
       // Navigate back to lab list with success message
       if (onSuccess) {
@@ -197,8 +82,6 @@ const CreateLab = ({ onNavigateBack, onSuccess }) => {
       setErrors({ submit: err.message || 'Failed to create lab' });
     } finally {
       setLoading(false);
-      setIsUploading(false);
-      setUploadProgress(0);
     }
   };
 
@@ -292,118 +175,6 @@ const CreateLab = ({ onNavigateBack, onSuccess }) => {
                 {errors.capacity && <span className="error-message">{errors.capacity}</span>}
               </div>
 
-              {/* Image Upload / URL */}
-              <div className="form-group">
-                <div className="image-upload-header">
-                  <label>Lab Image</label>
-                  {isStorageAvailable() && (
-                    <button
-                      type="button"
-                      className="toggle-input-mode"
-                      onClick={handleToggleInputMode}
-                      disabled={loading || isUploading}
-                    >
-                      {useUrlInput ? 'Upload File Instead' : 'Use URL Instead'}
-                    </button>
-                  )}
-                </div>
-
-                {useUrlInput ? (
-                  // URL Input Mode
-                  <>
-                    <input
-                      type="url"
-                      id="imageUrl"
-                      name="imageUrl"
-                      value={formData.imageUrl}
-                      onChange={handleChange}
-                      placeholder="https://example.com/lab-image.jpg"
-                      disabled={loading || isUploading}
-                      className={errors.imageUrl ? 'error' : ''}
-                    />
-                    {formData.imageUrl && (
-                      <div className="image-preview">
-                        <img
-                          src={formData.imageUrl}
-                          alt="Lab preview"
-                          onError={(e) => {
-                            e.target.style.display = 'none';
-                          }}
-                        />
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  // File Upload Mode
-                  <>
-                    <div className="file-upload-container">
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        id="imageFile"
-                        accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
-                        onChange={handleFileSelect}
-                        disabled={loading || isUploading}
-                        className="file-input"
-                      />
-                      <label htmlFor="imageFile" className="file-upload-label compact">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                          <polyline points="17 8 12 3 7 8"></polyline>
-                          <line x1="12" y1="3" x2="12" y2="15"></line>
-                        </svg>
-                        <span className="upload-placeholder">
-                          {selectedFile ? selectedFile.name : 'Choose an image or drag it here'}
-                        </span>
-                        {selectedFile && (
-                          <span className="file-size">
-                            {formatFileSize(selectedFile.size)}
-                          </span>
-                        )}
-                      </label>
-                    </div>
-
-                    {/* Upload Progress */}
-                    {isUploading && (
-                      <div className="upload-progress">
-                        <div className="progress-bar">
-                          <div
-                            className="progress-fill"
-                            style={{ width: `${uploadProgress}%` }}
-                          ></div>
-                        </div>
-                        <span className="progress-text">{uploadProgress}%</span>
-                      </div>
-                    )}
-
-                    {/* Image Preview */}
-                    {previewUrl && (
-                      <div className="image-preview">
-                        <img src={previewUrl} alt="Preview" />
-                        <button
-                          type="button"
-                          className="remove-image-btn"
-                          onClick={handleRemoveImage}
-                          disabled={loading || isUploading}
-                          title="Remove image"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <line x1="18" y1="6" x2="6" y2="18"></line>
-                            <line x1="6" y1="6" x2="18" y2="18"></line>
-                          </svg>
-                        </button>
-                      </div>
-                    )}
-
-                    <p className="file-upload-hint">
-                      Supported formats: JPG, PNG, GIF, WebP. Max size: 5MB
-                    </p>
-                  </>
-                )}
-
-                {errors.imageUrl && <span className="error-message">{errors.imageUrl}</span>}
-              </div>
-
               {/* Description */}
               <div className="form-group">
                 <label htmlFor="description">
@@ -433,9 +204,9 @@ const CreateLab = ({ onNavigateBack, onSuccess }) => {
               <button
                 type="submit"
                 className="btn-primary"
-                disabled={loading || isUploading}
+                disabled={loading}
               >
-                {isUploading ? `Uploading... ${uploadProgress}%` : loading ? 'Creating...' : 'Create Lab'}
+                {loading ? 'Creating...' : 'Create Lab'}
               </button>
             </div>
           </form>

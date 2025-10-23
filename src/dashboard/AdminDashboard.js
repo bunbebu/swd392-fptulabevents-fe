@@ -4,7 +4,9 @@ import { EquipmentList, EquipmentDetail } from '../features/equipment-management
 import EditEquipment from '../features/equipment-management/admin/EditEquipment';
 import { RoomList } from '../features/room-management';
 import RoomDetail from '../features/room-management/components/RoomDetail';
-import { LabManagement, LabDetail } from '../features/lab-management';
+import { LabList, LabDetail } from '../features/lab-management';
+import CreateLab from '../features/lab-management/admin/CreateLab';
+import EditLab from '../features/lab-management/admin/EditLab';
 import { EditEvent } from '../features/event-management/admin';
 import { EventList, EventDetail } from '../features/event-management';
 import { NotificationManagement } from '../features/notification-management';
@@ -17,6 +19,9 @@ const AdminDashboard = ({ user: userProp }) => {
   const [user, setUser] = useState(userProp);
   const [viewingRoomId, setViewingRoomId] = useState(null);
   const [viewingLabId, setViewingLabId] = useState(null);
+  const [creatingLab, setCreatingLab] = useState(false);
+  const [editingLabId, setEditingLabId] = useState(null);
+  const [labToast, setLabToast] = useState(null);
   const [viewingEquipmentId, setViewingEquipmentId] = useState(null);
   const [editingEquipmentId, setEditingEquipmentId] = useState(null);
   const [equipmentToast, setEquipmentToast] = useState(null);
@@ -286,6 +291,33 @@ const AdminDashboard = ({ user: userProp }) => {
           </div>
         );
       case 'labs':
+        if (creatingLab) {
+          return (
+            <div className="admin-content">
+              <CreateLab
+                onNavigateBack={() => setCreatingLab(false)}
+                onSuccess={() => {
+                  setCreatingLab(false);
+                  setLabToast({ message: 'Lab created successfully!', type: 'success' });
+                }}
+              />
+            </div>
+          );
+        }
+        if (editingLabId) {
+          return (
+            <div className="admin-content">
+              <EditLab
+                labId={editingLabId}
+                onNavigateBack={() => setEditingLabId(null)}
+                onSuccess={() => {
+                  setEditingLabId(null);
+                  setLabToast({ message: 'Lab updated successfully!', type: 'success' });
+                }}
+              />
+            </div>
+          );
+        }
         if (viewingLabId) {
           return (
             <div className="admin-content">
@@ -298,7 +330,14 @@ const AdminDashboard = ({ user: userProp }) => {
         }
         return (
           <div className="admin-content">
-            <LabManagement onViewLab={(labId) => setViewingLabId(labId)} />
+            <LabList 
+              userRole="Admin" 
+              onViewLab={(labId) => setViewingLabId(labId)}
+              onCreateLab={() => setCreatingLab(true)}
+              onEditLab={(labId) => setEditingLabId(labId)}
+              initialToast={labToast}
+              onToastShown={() => setLabToast(null)}
+            />
           </div>
         );
       case 'events':

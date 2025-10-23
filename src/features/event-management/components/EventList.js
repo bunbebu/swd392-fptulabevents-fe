@@ -51,6 +51,22 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
 
   const isAdmin = userRole === 'Admin';
 
+  // Helper function to normalize event data (handle both Title/title)
+  const normalizeEvent = (event) => {
+    return {
+      ...event,
+      id: event.id || event.Id,
+      title: event.title || event.Title || 'Untitled Event',
+      description: event.description || event.Description,
+      location: event.location || event.Location,
+      startDate: event.startDate || event.StartDate,
+      endDate: event.endDate || event.EndDate,
+      status: event.status !== undefined ? event.status : event.Status,
+      createdBy: event.createdBy || event.CreatedBy,
+      bookingCount: event.bookingCount || event.BookingCount || 0
+    };
+  };
+
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
     window.clearTimeout(showToast._tid);
@@ -152,7 +168,10 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
 
       console.log('Normalized counts:', { totalCount, activeCount, derivedTotalCount, derivedTotalPages });
 
-      setEvents(eventData);
+      // Normalize event data to handle both Title/title properties
+      const normalizedEvents = eventData.map(event => normalizeEvent(event));
+
+      setEvents(normalizedEvents);
       setTotalPages(derivedTotalPages);
       setTotalEvents(derivedTotalCount);
       setStats({ total: totalCount, active: activeCount });
@@ -208,6 +227,9 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
   const handleDeleteEvent = async (eventId) => {
     const eventToDelete = events.find(e => e.id === eventId);
     
+    // Set loading state
+    setActionLoading(true);
+    
     // Remove from UI immediately
     setEvents(prev => prev.filter(event => event.id !== eventId));
     setTotalEvents(prev => prev - 1);
@@ -216,11 +238,38 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
       await eventApi.deleteEvent(eventId, true);
       setConfirmDeleteEvent(null);
       showToast('Event deleted successfully!', 'success');
+      
+      // Reload events to ensure consistency
+      await loadEvents(currentPage);
     } catch (err) {
       // Restore event on error
       setEvents(prev => [...prev, eventToDelete]);
       setTotalEvents(prev => prev + 1);
-      showToast(err.message || 'Failed to delete event', 'error');
+      
+      // Show specific error message
+      console.error('Delete error:', err);
+      let errorMessage = 'Failed to delete event';
+      
+      if (err.message) {
+        errorMessage = err.message;
+        
+        // Check for database constraint errors
+        if (err.message.includes('entity changes') || err.message.includes('foreign key') || err.message.includes('constraint')) {
+          errorMessage = 'Cannot delete event: This event has bookings or other related data. Please remove all bookings first.';
+        }
+      } else if (err.status === 400) {
+        errorMessage = 'Cannot delete event with active bookings. Please cancel or reject the bookings first.';
+      } else if (err.status === 404) {
+        errorMessage = 'Event not found';
+      } else if (err.status === 401) {
+        errorMessage = 'Authentication required';
+      } else if (err.status === 403) {
+        errorMessage = 'You do not have permission to delete this event';
+      }
+      
+      showToast(errorMessage, 'error');
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -639,7 +688,7 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
               <h3>Confirm Delete</h3>
             </div>
             <div className="modal-body">
-              <p>Are you sure you want to delete event <strong>{confirmDeleteEvent.title}</strong>?</p>
+              <p>Are you sure you want to delete event <strong>{normalizeEvent(confirmDeleteEvent).title}</strong>?</p>
               <p className="text-muted small">This action cannot be undone.</p>
             </div>
             <div className="modal-footer">
@@ -652,7 +701,7 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
               </button>
               <button
                 className="btn btn-danger"
-                onClick={() => handleDeleteEvent(confirmDeleteEvent.id)}
+                onClick={() => handleDeleteEvent(confirmDeleteEvent.id || confirmDeleteEvent.Id)}
                 disabled={actionLoading}
               >
                 {actionLoading ? 'Deleting...' : 'Delete'}
