@@ -125,7 +125,7 @@ const UserList = () => {
       setLoading(false);
       setPaginationLoading(false);
     }
-  }, [pageSize]);
+  }, [pageSize, currentPage]);
 
   useEffect(() => {
     loadUsers(1, false); // false indicates this is initial load
@@ -325,7 +325,10 @@ const UserList = () => {
   if (loading) {
     return (
       <div className="user-list-container">
-        <div className="loading">Loading users...</div>
+        <div className="loading">
+          <div className="loading-spinner"></div>
+          Loading users...
+        </div>
       </div>
     );
   }

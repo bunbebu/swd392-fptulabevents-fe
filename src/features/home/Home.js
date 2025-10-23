@@ -153,7 +153,8 @@ function Home({ user: userProp }) {
       window.sessionStorage.removeItem('refreshToken');
       window.sessionStorage.removeItem('user');
     } catch {}
-    window.location.reload();
+    // Redirect to home page instead of reload to avoid callback route issues
+    window.location.href = '/';
   };
 
   // Helper functions

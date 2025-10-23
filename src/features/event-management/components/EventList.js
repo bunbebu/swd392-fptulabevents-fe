@@ -1,52 +1,51 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { roomsApi, authApi } from '../../../api';
-import RoomStatusForm from '../admin/RoomStatusForm';
-import CreateRoom from '../admin/CreateRoom';
-import EditRoom from '../admin/EditRoom';
+import { eventApi, authApi } from '../../../api';
+import CreateEvent from '../admin/CreateEvent';
+import EditEvent from '../admin/EditEvent';
 
 /**
- * Room List Component - Common for both Admin and Lecturer
+ * Event List Component - Common for both Admin and Users
  *
- * For Admin: Full room management with create/edit/delete actions
- * For Lecturer: View room availability for booking approval
+ * For Admin: Full event management with create/edit/delete actions
+ * For Users: View events and upcoming events
  *
  * Related User Stories:
- * - US-09: Admin - Manage labs and equipment
- * - US-22: Lecturer - View room availability before approving booking
+ * - US-XX: Admin - Manage events
+ * - US-XX: User - View events
  *
  * Related Use Cases:
- * - UC-10: Manage Rooms (Admin)
- * - UC-40: Room Status Update (Admin)
+ * - UC-XX: Manage Events (Admin)
+ * - UC-XX: View Events (All Users)
  */
-const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
-  const [rooms, setRooms] = useState([]);
+const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
+  const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [paginationLoading, setPaginationLoading] = useState(false);
   const [error, setError] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(8);
   const [totalPages, setTotalPages] = useState(1);
-  const [totalRooms, setTotalRooms] = useState(0);
+  const [totalEvents, setTotalEvents] = useState(0);
   // eslint-disable-next-line no-unused-vars
-  const [stats, setStats] = useState({ total: 0, available: 0 });
+  const [stats, setStats] = useState({ total: 0, active: 0 });
   const [toast, setToast] = useState(null);
 
   // Modal states
   const [showCreatePage, setShowCreatePage] = useState(false);
   const [showEditPage, setShowEditPage] = useState(false);
-  const [showStatusModal, setShowStatusModal] = useState(false);
-  const [selectedRoom, setSelectedRoom] = useState(null);
+  const [selectedEvent, setSelectedEvent] = useState(null);
+  // eslint-disable-next-line no-unused-vars
   const [actionLoading, setActionLoading] = useState(false);
-  const [confirmDeleteRoom, setConfirmDeleteRoom] = useState(null);
+  const [confirmDeleteEvent, setConfirmDeleteEvent] = useState(null);
   
   // API filter states
   const [apiFilters, setApiFilters] = useState({
-    name: '',
+    title: '',
     location: '',
     status: '',
-    minCapacity: '',
-    maxCapacity: '',
-    page: 1,
+    startDateFrom: '',
+    startDateTo: '',
+    page: 0,
     pageSize: 8
   });
 
@@ -58,8 +57,8 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
     showToast._tid = window.setTimeout(() => setToast(null), 3000);
   };
 
-  // Load room data with pagination
-  const loadRooms = useCallback(async (page = currentPage, isPagination = false) => {
+  // Load event data with pagination
+  const loadEvents = useCallback(async (page = currentPage, isPagination = false) => {
     try {
       // Only show main loading on initial load, not on pagination
       if (isPagination) {
@@ -72,27 +71,27 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
       // Use current API filters with pagination
       const filters = {
         ...apiFilters,
-        page: page,
+        page: page - 1, // Backend uses 0-based pagination
         pageSize: pageSize
       };
       
       // Clean up empty filters
       const cleanFilters = Object.fromEntries(
         Object.entries(filters).filter(([key, value]) => 
-          value !== '' && value !== null && value !== undefined
+          value !== '' && value !== null && value !== undefined && value !== false
         )
       );
 
-      // Try to get room list first, handle other calls separately
-      let roomList;
+      // Try to get event list first, handle other calls separately
+      let eventList;
       try {
-        roomList = await roomsApi.getRooms(cleanFilters);
+        eventList = await eventApi.getEvents(cleanFilters);
       } catch (authErr) {
         // If 401, try to refresh token and retry once
         if (authErr.status === 401) {
           try {
-            await authApi.refreshAuthToken();
-            roomList = await roomsApi.getRooms(cleanFilters);
+            await authApi.refresh();
+            eventList = await eventApi.getEvents(cleanFilters);
           } catch (refreshErr) {
             throw authErr; // Throw original error if refresh fails
           }
@@ -103,99 +102,76 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
       
       // Get counts separately with error handling
       let totalCount = 0;
-      let availableCount = 0;
+      let activeCount = 0;
       
       try {
-        totalCount = await roomsApi.getRoomCount();
+        const countResult = await eventApi.getEventCount();
+        totalCount = countResult?.Count || countResult?.count || 0;
       } catch (countErr) {
         console.warn('Failed to get total count:', countErr);
-        // Fallback: count from room list if it's an array
-        if (Array.isArray(roomList)) {
-          totalCount = roomList.length;
+        // Fallback: count from event list if it's an array
+        if (Array.isArray(eventList)) {
+          totalCount = eventList.length;
         }
       }
       
       try {
-        availableCount = await roomsApi.getAvailableRoomCount();
-      } catch (availableErr) {
-        console.warn('Failed to get available count:', availableErr);
-        // Fallback: count available rooms from list
-        if (Array.isArray(roomList)) {
-          availableCount = roomList.filter(room => room.status === 'Available').length;
+        const activeCountResult = await eventApi.getActiveEventCount();
+        activeCount = activeCountResult?.ActiveCount || activeCountResult?.activeCount || 0;
+      } catch (activeErr) {
+        console.warn('Failed to get active count:', activeErr);
+        // Fallback: count active events from list
+        if (Array.isArray(eventList)) {
+          activeCount = eventList.filter(event => event.status === 'Active').length;
         }
       }
 
-      console.log('Room API responses:', { roomList, totalCount, availableCount });
+      console.log('Event API responses:', { eventList, totalCount, activeCount });
 
-      // Handle both array and paginated response formats
-      let roomData = [];
-      // eslint-disable-next-line no-unused-vars
-      let totalPagesFromApi = 1;
+      // Handle array response format
+      let eventData = [];
       let totalCountFromApi = 0;
-      const serverPaginatedRequested = filters.page !== undefined || filters.pageSize !== undefined;
 
-      if (Array.isArray(roomList)) {
-        // If backend is already paginating (we sent Page/PageSize), do NOT slice again
-        if (serverPaginatedRequested) {
-          roomData = roomList;
-          // We'll compute total pages from the count endpoint below
-          totalCountFromApi = roomList.length;
-          totalPagesFromApi = 1; // temporary; will be overridden by derived calculation
-        } else {
-          // Backend ignored pagination; do client-side pagination
-          roomData = roomList;
-          totalCountFromApi = roomList.length;
-          totalPagesFromApi = Math.max(1, Math.ceil(totalCountFromApi / pageSize));
-          const start = (page - 1) * pageSize;
-          const end = start + pageSize;
-          roomData = roomList.slice(start, end);
-        }
-      } else if (roomList?.data && Array.isArray(roomList.data)) {
-        roomData = roomList.data;
-        totalPagesFromApi = roomList.totalPages || 1;
-        totalCountFromApi = roomList.totalCount || roomList.data.length;
-      } else if (roomList?.Data && Array.isArray(roomList.Data)) {
-        roomData = roomList.Data;
-        // eslint-disable-next-line no-unused-vars
-        totalPagesFromApi = roomList.TotalPages || 1;
-        totalCountFromApi = roomList.TotalCount || roomList.Data.length;
+      if (Array.isArray(eventList)) {
+        eventData = eventList;
+        totalCountFromApi = eventList.length;
+      } else if (eventList?.data && Array.isArray(eventList.data)) {
+        eventData = eventList.data;
+        totalCountFromApi = eventList.totalCount || eventList.data.length;
+      } else if (eventList?.Data && Array.isArray(eventList.Data)) {
+        eventData = eventList.Data;
+        totalCountFromApi = eventList.TotalCount || eventList.Data.length;
       }
-
-      // Ensure counts are numbers
-      const normalizedTotalCount = typeof totalCount === 'number' ? totalCount : 
-        (totalCount?.count || totalCount?.Count || 0);
-      const normalizedAvailableCount = typeof availableCount === 'number' ? availableCount : 
-        (availableCount?.availableCount || availableCount?.AvailableCount || 0);
 
       // Determine if any filters (besides pagination) are applied
-      const hasNonPagingFilters = !!(filters.name || filters.location || filters.status !== '' || filters.minCapacity || filters.maxCapacity);
+      const hasNonPagingFilters = !!(filters.title || filters.location || filters.status !== '' || filters.startDateFrom || filters.startDateTo);
 
       // Prefer backend total count when no non-paging filters are applied
-      const derivedTotalCount = (!hasNonPagingFilters && normalizedTotalCount) ? normalizedTotalCount : totalCountFromApi;
+      const derivedTotalCount = (!hasNonPagingFilters && totalCount) ? totalCount : totalCountFromApi;
       const derivedTotalPages = Math.max(1, Math.ceil((derivedTotalCount || 0) / pageSize));
 
-      console.log('Normalized counts:', { normalizedTotalCount, normalizedAvailableCount, derivedTotalCount, derivedTotalPages });
+      console.log('Normalized counts:', { totalCount, activeCount, derivedTotalCount, derivedTotalPages });
 
-      setRooms(roomData);
+      setEvents(eventData);
       setTotalPages(derivedTotalPages);
-      setTotalRooms(derivedTotalCount);
-      setStats({ total: normalizedTotalCount, available: normalizedAvailableCount });
+      setTotalEvents(derivedTotalCount);
+      setStats({ total: totalCount, active: activeCount });
     } catch (err) {
-      console.error('Error loading rooms:', err);
+      console.error('Error loading events:', err);
       
       // Handle specific error types
       if (err.status === 401) {
         setError('Authentication required. Please log in again.');
       } else if (err.status === 403) {
-        setError('Access denied. You do not have permission to view rooms.');
+        setError('Access denied. You do not have permission to view events.');
       } else if (err.status === 0) {
         setError('Unable to connect to server. Please check your internet connection.');
       } else {
-        setError(err.message || 'Unable to load room list');
+        setError(err.message || 'Unable to load event list');
       }
       
-      setRooms([]);
-      setTotalRooms(0);
+      setEvents([]);
+      setTotalEvents(0);
       setTotalPages(1);
     } finally {
       setLoading(false);
@@ -204,138 +180,104 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
   }, [apiFilters, currentPage, pageSize]);
 
   useEffect(() => {
-    loadRooms();
-  }, [loadRooms]);
+    loadEvents();
+  }, [loadEvents]);
 
   // Pagination handler
   const handlePageChange = (newPage) => {
     if (newPage >= 1 && newPage <= totalPages) {
       setCurrentPage(newPage);
-      loadRooms(newPage, true);
+      loadEvents(newPage, true);
     }
   };
 
   // CRUD operation handlers
-  const handleCreateRoomSuccess = async () => {
+  const handleCreateEventSuccess = async () => {
     setShowCreatePage(false);
-    showToast('Room created successfully!', 'success');
-    await loadRooms(currentPage);
+    showToast('Event created successfully!', 'success');
+    await loadEvents(currentPage);
   };
 
-  const handleEditRoomSuccess = async () => {
+  const handleEditEventSuccess = async () => {
     setShowEditPage(false);
-    setSelectedRoom(null);
-    showToast('Room updated successfully!', 'success');
-    await loadRooms(currentPage);
+    setSelectedEvent(null);
+    showToast('Event updated successfully!', 'success');
+    await loadEvents(currentPage);
   };
 
-
-  const handleDeleteRoom = async (roomId) => {
-    const roomToDelete = rooms.find(r => r.id === roomId);
+  const handleDeleteEvent = async (eventId) => {
+    const eventToDelete = events.find(e => e.id === eventId);
     
     // Remove from UI immediately
-    setRooms(prev => prev.filter(room => room.id !== roomId));
-    setTotalRooms(prev => prev - 1);
+    setEvents(prev => prev.filter(event => event.id !== eventId));
+    setTotalEvents(prev => prev - 1);
 
     try {
-      await roomsApi.deleteRoom(roomId);
-      setConfirmDeleteRoom(null);
-      showToast('Room deleted successfully!', 'success');
+      await eventApi.deleteEvent(eventId, true);
+      setConfirmDeleteEvent(null);
+      showToast('Event deleted successfully!', 'success');
     } catch (err) {
-      // Restore room on error
-      setRooms(prev => [...prev, roomToDelete]);
-      setTotalRooms(prev => prev + 1);
-      showToast(err.message || 'Failed to delete room', 'error');
-    }
-  };
-
-  const handleStatusUpdate = async (statusData) => {
-    const originalRoom = rooms.find(r => r.id === selectedRoom.id);
-    
-    // Create optimistic update
-    const optimisticRoom = {
-      ...originalRoom,
-      status: statusData.status,
-      isOptimistic: true
-    };
-
-    // Update UI immediately
-    setRooms(prev => prev.map(room => 
-      room.id === selectedRoom.id ? optimisticRoom : room
-    ));
-
-    try {
-      setActionLoading(true);
-      const updatedRoom = await roomsApi.updateRoomStatus(selectedRoom.id, statusData.status, statusData.notes || '');
-      
-      // Replace with real updated room
-      setRooms(prev => prev.map(room => 
-        room.id === selectedRoom.id 
-          ? { ...updatedRoom, isOptimistic: false }
-          : room
-      ));
-      
-      setShowStatusModal(false);
-      setSelectedRoom(null);
-      showToast('Status updated successfully!', 'success');
-    } catch (err) {
-      // Revert to original room on error
-      setRooms(prev => prev.map(room => 
-        room.id === selectedRoom.id ? originalRoom : room
-      ));
-      showToast(err.message || 'Failed to update status', 'error');
-    } finally {
-      setActionLoading(false);
+      // Restore event on error
+      setEvents(prev => [...prev, eventToDelete]);
+      setTotalEvents(prev => prev + 1);
+      showToast(err.message || 'Failed to delete event', 'error');
     }
   };
 
   // Open edit page
-  const openEditPage = (room) => {
-    setSelectedRoom(room);
+  const openEditPage = (event) => {
+    setSelectedEvent(event);
     setShowEditPage(true);
-  };
-
-  // Open status modal
-  const openStatusModal = (room) => {
-    setSelectedRoom(room);
-    setShowStatusModal(true);
   };
 
   // Apply filters
   const applyFilters = () => {
     setCurrentPage(1);
-    loadRooms(1);
+    loadEvents(1);
   };
 
   // Clear filters
   const clearFilters = () => {
     setApiFilters({
-      name: '',
+      title: '',
       location: '',
       status: '',
-      minCapacity: '',
-      maxCapacity: '',
-      page: 1,
+      startDateFrom: '',
+      startDateTo: '',
+      page: 0,
       pageSize: 8
     });
     setCurrentPage(1);
-    loadRooms(1);
+    loadEvents(1);
   };
 
   // Get status badge class
   const getStatusBadgeClass = (status) => {
     switch (status?.toString()) {
-      case 'Available':
+      case 'Active':
         return 'status-badge status-available';
-      case 'Occupied':
-        return 'status-badge status-occupied';
-      case 'Maintenance':
-        return 'status-badge status-maintenance';
-      case 'Unavailable':
+      case 'Inactive':
         return 'status-badge status-unavailable';
+      case 'Cancelled':
+        return 'status-badge status-maintenance';
+      case 'Completed':
+        return 'status-badge status-occupied';
       default:
         return 'status-badge unknown';
     }
+  };
+
+  // Format date
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   };
 
   if (loading) {
@@ -343,7 +285,7 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
       <div className="room-list-container">
         <div className="loading">
           <div className="loading-spinner"></div>
-          Loading rooms...
+          Loading events...
         </div>
       </div>
     );
@@ -352,16 +294,16 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
   return (
     <div className="room-list-container">
       {showCreatePage ? (
-        <CreateRoom onNavigateBack={() => setShowCreatePage(false)} onSuccess={handleCreateRoomSuccess} />
+        <CreateEvent onNavigateBack={() => setShowCreatePage(false)} onSuccess={handleCreateEventSuccess} />
       ) : showEditPage ? (
-        <EditRoom room={selectedRoom} onNavigateBack={() => {
+        <EditEvent event={selectedEvent} onNavigateBack={() => {
           setShowEditPage(false);
-          setSelectedRoom(null);
-        }} onSuccess={handleEditRoomSuccess} />
+          setSelectedEvent(null);
+        }} onSuccess={handleEditEventSuccess} />
       ) : (
         <>
           <div className="room-list-header">
-            <h2>Room Management</h2>
+            <h2>Event Management</h2>
             {isAdmin && (
               <button 
                 className="btn-new-booking"
@@ -372,7 +314,7 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                   <path d="M5 12h14"></path>
                   <path d="M12 5v14"></path>
                 </svg>
-                Create New Room
+                Create New Event
               </button>
             )}
           </div>
@@ -419,7 +361,7 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
             <div className="error-message">
               {error}
               <div className="error-actions">
-                <button onClick={() => loadRooms()} className="btn btn-secondary">
+                <button onClick={() => loadEvents()} className="btn btn-secondary">
                   Retry
                 </button>
                 {error.includes('Authentication required') && (
@@ -442,7 +384,7 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
           )}
 
           <div className="room-list-stats">
-            <span>Total rooms: {totalRooms}</span>
+            <span>Total events: {totalEvents}</span>
             <span>Page {currentPage} / {totalPages}</span>
           </div>
 
@@ -456,25 +398,25 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                 </svg>
                 <input
                   type="text"
-                  placeholder="Search by name or location..."
-                  value={apiFilters.name || apiFilters.location || ''}
+                  placeholder="Search by title or location..."
+                  value={apiFilters.title || apiFilters.location || ''}
                   onChange={(e) => {
                     const value = e.target.value;
-                    setApiFilters(prev => ({ 
-                      ...prev, 
-                      name: value,
+                    setApiFilters(prev => ({
+                      ...prev,
+                      title: value,
                       location: value
                     }));
                   }}
                   className="search-input"
                 />
-                {(apiFilters.name || apiFilters.location) && (
-                  <button 
+                {(apiFilters.title || apiFilters.location) && (
+                  <button
                     className="clear-search"
-                    onClick={() => setApiFilters(prev => ({ 
-                      ...prev, 
-                      name: '', 
-                      location: '' 
+                    onClick={() => setApiFilters(prev => ({
+                      ...prev,
+                      title: '',
+                      location: ''
                     }))}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -492,36 +434,22 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                   className="filter-select"
                 >
                   <option value="">All Status</option>
-                  <option value="Available">Available</option>
-                  <option value="Occupied">Occupied</option>
-                  <option value="Maintenance">Maintenance</option>
-                  <option value="Unavailable">Unavailable</option>
+                  <option value="0">Active</option>
+                  <option value="1">Inactive</option>
+                  <option value="2">Cancelled</option>
+                  <option value="3">Completed</option>
                 </select>
-                <input
-                  type="number"
-                  placeholder="Min Capacity"
-                  value={apiFilters.minCapacity}
-                  onChange={(e) => setApiFilters(prev => ({ ...prev, minCapacity: e.target.value }))}
-                  className="filter-input"
-                />
-                <input
-                  type="number"
-                  placeholder="Max Capacity"
-                  value={apiFilters.maxCapacity}
-                  onChange={(e) => setApiFilters(prev => ({ ...prev, maxCapacity: e.target.value }))}
-                  className="filter-input"
-                />
               </div>
-              
+
               <div className="filter-actions">
-                <button 
+                <button
                   className="btn btn-primary"
                   onClick={applyFilters}
                   disabled={actionLoading}
                 >
                   Apply Filters
                 </button>
-                <button 
+                <button
                   className="btn btn-secondary"
                   onClick={clearFilters}
                   disabled={actionLoading}
@@ -537,21 +465,22 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
               <thead>
                 <tr>
                   <th>ID</th>
-                  <th className="col-name">Name</th>
+                  <th className="col-name">Title</th>
                   <th className="col-location">Location</th>
-                  <th>Capacity</th>
+                  <th>Start Date</th>
+                  <th>End Date</th>
                   <th>Status</th>
-                  <th>Equipment Count</th>
-                  <th>Active Bookings</th>
+                  <th>Bookings</th>
+                  <th>Created By</th>
                   {isAdmin && <th>Actions</th>}
                 </tr>
               </thead>
               <tbody>
                 {loading && !paginationLoading ? (
                   <tr>
-                    <td colSpan={isAdmin ? "8" : "7"} className="loading-cell">
+                    <td colSpan={isAdmin ? "9" : "8"} className="loading-cell">
                       <div className="loading-spinner"></div>
-                      Loading rooms...
+                      Loading events...
                     </td>
                   </tr>
                 ) : paginationLoading ? (
@@ -565,53 +494,46 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                       <td><div className="skeleton-text"></div></td>
                       <td><div className="skeleton-text"></div></td>
                       <td><div className="skeleton-text"></div></td>
+                      <td><div className="skeleton-text"></div></td>
                       {isAdmin && <td><div className="skeleton-text"></div></td>}
                     </tr>
                   ))
-                ) : rooms.length === 0 ? (
+                ) : events.length === 0 ? (
                   <tr>
-                    <td colSpan={isAdmin ? "8" : "7"} className="no-data">
-                      No room data
+                    <td colSpan={isAdmin ? "9" : "8"} className="no-data">
+                      No event data
                     </td>
                   </tr>
                 ) : (
-                  rooms.map((room) => (
-                    <tr key={room.id} className={room.isOptimistic ? 'optimistic-row' : ''}>
-                      <td>
-                        {room.id?.substring(0, 8)}...
-                        {room.isOptimistic && (
-                          <span className="optimistic-indicator" title="Saving...">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M21 12a9 9 0 11-6.219-8.56"/>
-                            </svg>
-                          </span>
-                        )}
-                      </td>
+                  events.map((event) => (
+                    <tr key={event.id}>
+                      <td>{event.id?.substring(0, 8)}...</td>
                       <td className="col-name">
                         <div>
-                          <strong>{room.name}</strong>
-                          {room.description && (
-                            <div className="text-muted small">{room.description}</div>
+                          <strong>{event.title}</strong>
+                          {event.description && (
+                            <div className="text-muted small">{event.description.substring(0, 50)}{event.description.length > 50 ? '...' : ''}</div>
                           )}
                         </div>
                       </td>
-                      <td className="col-location">{room.location}</td>
-                      <td>{room.capacity}</td>
+                      <td className="col-location">{event.location || 'N/A'}</td>
+                      <td>{formatDate(event.startDate)}</td>
+                      <td>{formatDate(event.endDate)}</td>
                       <td>
-                        <span className={getStatusBadgeClass(room.status)}>
-                          {room.status || 'Unknown'}
+                        <span className={getStatusBadgeClass(event.status)}>
+                          {event.status || 'Unknown'}
                         </span>
                       </td>
-                      <td>{room.equipmentCount || 0}</td>
-                      <td>{room.activeBookings || 0}</td>
+                      <td>{event.bookingCount || 0}</td>
+                      <td>{event.createdBy || 'N/A'}</td>
                       {isAdmin && (
                         <td>
                           <div className="action-buttons">
                             <button
                               className="btn btn-sm btn-icon btn-icon-outline color-yellow"
                               onClick={() => {
-                                if (onViewRoom) {
-                                  onViewRoom(room.id);
+                                if (onViewEvent) {
+                                  onViewEvent(event.id);
                                 }
                               }}
                               disabled={actionLoading}
@@ -625,9 +547,9 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                             </button>
                             <button
                               className="btn btn-sm btn-icon btn-icon-outline color-blue"
-                              onClick={() => openEditPage(room)}
+                              onClick={() => openEditPage(event)}
                               disabled={actionLoading}
-                              aria-label="Edit room"
+                              aria-label="Edit event"
                               title="Edit"
                             >
                               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -636,22 +558,10 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                               </svg>
                             </button>
                             <button
-                              className="btn btn-sm btn-icon btn-icon-outline color-purple"
-                              onClick={() => openStatusModal(room)}
-                              disabled={actionLoading}
-                              aria-label="Update status"
-                              title="Update Status"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M9 12l2 2 4-4"/>
-                                <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/>
-                              </svg>
-                            </button>
-                            <button
                               className="btn btn-sm btn-icon btn-icon-outline color-red"
-                              onClick={() => setConfirmDeleteRoom(room)}
+                              onClick={() => setConfirmDeleteEvent(event)}
                               disabled={actionLoading}
-                              aria-label="Delete room"
+                              aria-label="Delete event"
                               title="Delete"
                             >
                               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -721,45 +631,28 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
         </>
       )}
 
-      {/* Modals */}
-
-
-      {showStatusModal && selectedRoom && (
-        <RoomStatusForm
-          room={selectedRoom}
-          onSubmit={handleStatusUpdate}
-          onCancel={() => {
-            setShowStatusModal(false);
-            setSelectedRoom(null);
-          }}
-          loading={actionLoading}
-        />
-      )}
-
-
-
       {/* Delete Confirmation Modal */}
-      {confirmDeleteRoom && (
+      {confirmDeleteEvent && (
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header">
               <h3>Confirm Delete</h3>
             </div>
             <div className="modal-body">
-              <p>Are you sure you want to delete room <strong>{confirmDeleteRoom.name}</strong>?</p>
+              <p>Are you sure you want to delete event <strong>{confirmDeleteEvent.title}</strong>?</p>
               <p className="text-muted small">This action cannot be undone.</p>
             </div>
             <div className="modal-footer">
               <button
                 className="btn btn-secondary"
-                onClick={() => setConfirmDeleteRoom(null)}
+                onClick={() => setConfirmDeleteEvent(null)}
                 disabled={actionLoading}
               >
                 Cancel
               </button>
               <button
                 className="btn btn-danger"
-                onClick={() => handleDeleteRoom(confirmDeleteRoom.id)}
+                onClick={() => handleDeleteEvent(confirmDeleteEvent.id)}
                 disabled={actionLoading}
               >
                 {actionLoading ? 'Deleting...' : 'Delete'}
@@ -772,4 +665,5 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
   );
 };
 
-export default RoomList;
+export default EventList;
+

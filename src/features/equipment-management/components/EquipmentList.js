@@ -317,7 +317,10 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
   if (loading) {
     return (
       <div className="equipment-list-container">
-        <div className="loading">Loading equipment...</div>
+        <div className="loading">
+          <div className="loading-spinner"></div>
+          Loading equipment...
+        </div>
       </div>
     );
   }

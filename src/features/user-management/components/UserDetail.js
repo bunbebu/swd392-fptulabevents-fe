@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { userApi } from '../../../api';
 
 /**
@@ -14,11 +14,7 @@ const UserDetail = ({ userId, onNavigateBack }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
-    loadUserDetail();
-  }, [userId]);
-
-  const loadUserDetail = async () => {
+  const loadUserDetail = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -31,7 +27,12 @@ const UserDetail = ({ userId, onNavigateBack }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [userId]);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    loadUserDetail();
+  }, [userId, loadUserDetail]);
 
   const getStatusBadgeClass = (status) => {
     switch (status?.toLowerCase()) {

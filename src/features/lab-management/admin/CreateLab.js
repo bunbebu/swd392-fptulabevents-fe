@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { roomsApi } from '../../../api';
+import React, { useState, useRef, useEffect } from 'react';
+import { labsApi } from '../../../api';
 import {
   uploadImage,
   validateImageFile,
@@ -10,14 +10,23 @@ import {
 } from '../../../utils/imageUpload';
 
 /**
- * Edit Room Page Component - Admin Only
- * 
- * Dedicated page for editing existing room
- * 
+ * Create Lab Page Component - Admin Only
+ *
+ * Dedicated page for creating new lab with image upload support
+ *
  * Related Use Cases:
- * - UC-09: Manage Labs (Admin)
+ * - UC-10: Manage Labs (Admin)
+ * - UC-16: Upload Event Cover Image (adapted for labs)
+ *
+ * Features:
+ * - File upload to Firebase Storage
+ * - Image preview
+ * - Upload progress tracking
+ * - File validation (type, size)
+ * - Fallback to URL input if Firebase is not configured
  */
-const EditRoom = ({ room, onNavigateBack, onSuccess }) => {
+const CreateLab = ({ onNavigateBack, onSuccess }) => {
+
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -25,6 +34,7 @@ const EditRoom = ({ room, onNavigateBack, onSuccess }) => {
     capacity: 1,
     imageUrl: ''
   });
+
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
@@ -44,24 +54,6 @@ const EditRoom = ({ room, onNavigateBack, onSuccess }) => {
       }
     };
   }, [previewUrl]);
-
-  // Initialize form data
-  useEffect(() => {
-    if (room) {
-      setFormData({
-        name: room.name || '',
-        description: room.description || '',
-        location: room.location || '',
-        capacity: room.capacity || 1,
-        imageUrl: room.imageUrl || ''
-      });
-      
-      // If room has existing image, set it as current image
-      if (room.imageUrl) {
-        setUseUrlInput(true); // Start with URL mode to show current image
-      }
-    }
-  }, [room]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -124,7 +116,7 @@ const EditRoom = ({ room, onNavigateBack, onSuccess }) => {
     const newErrors = {};
 
     if (!formData.name.trim()) {
-      newErrors.name = 'Room name is required';
+      newErrors.name = 'Lab name is required';
     }
 
     if (!formData.location.trim()) {
@@ -167,7 +159,7 @@ const EditRoom = ({ room, onNavigateBack, onSuccess }) => {
       if (selectedFile && !useUrlInput) {
         try {
           setIsUploading(true);
-          imageUrl = await uploadImage(selectedFile, 'rooms', (progress) => {
+          imageUrl = await uploadImage(selectedFile, 'labs', (progress) => {
             setUploadProgress(progress);
           });
           setIsUploading(false);
@@ -187,22 +179,22 @@ const EditRoom = ({ room, onNavigateBack, onSuccess }) => {
         imageUrl: imageUrl || null
       };
 
-      await roomsApi.updateRoom(room.id, submitData);
+      await labsApi.createLab(submitData);
 
       // Cleanup preview URL
       if (previewUrl) {
         revokePreviewUrl(previewUrl);
       }
 
-      // Navigate back to room list with success message
-    if (onSuccess) {
-      onSuccess();
+      // Navigate back to lab list with success message
+      if (onSuccess) {
+        onSuccess();
       } else if (onNavigateBack) {
         onNavigateBack();
       }
     } catch (err) {
-      console.error('Failed to update room:', err);
-      setErrors({ submit: err.message || 'Failed to update room' });
+      console.error('Failed to create lab:', err);
+      setErrors({ submit: err.message || 'Failed to create lab' });
     } finally {
       setLoading(false);
       setIsUploading(false);
@@ -216,49 +208,22 @@ const EditRoom = ({ room, onNavigateBack, onSuccess }) => {
     }
   };
 
-  if (!room) {
-    return (
-      <div className="create-room-page">
-        <div className="page-header">
-          <div className="header-content">
-            <button 
-              className="back-button"
-              onClick={handleCancel}
-              title="Back to Room List"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M19 12H5"></path>
-                <path d="M12 19l-7-7 7-7"></path>
-              </svg>
-            </button>
-            <h1>Edit Room</h1>
-          </div>
-        </div>
-        <div className="page-content">
-          <div className="form-container">
-            <div className="error-message">Room not found</div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="create-room-page">
+    <div className="create-lab-page">
       <div className="page-header">
         <div className="header-content">
           <button 
             className="back-button"
             onClick={handleCancel}
             disabled={loading}
-            title="Back to Room List"
+            title="Back to Lab List"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 12H5"></path>
               <path d="M12 19l-7-7 7-7"></path>
             </svg>
           </button>
-          <h1>Edit Room: {room.name}</h1>
+          <h1>Create New Lab</h1>
         </div>
       </div>
 
@@ -272,10 +237,10 @@ const EditRoom = ({ room, onNavigateBack, onSuccess }) => {
 
           <form onSubmit={handleSubmit}>
             <div className="form-grid">
-              {/* Room Name */}
+              {/* Lab Name */}
               <div className="form-group">
                 <label htmlFor="name">
-                  Room Name <span className="required">*</span>
+                  Lab Name <span className="required">*</span>
                 </label>
                 <input
                   type="text"
@@ -284,7 +249,7 @@ const EditRoom = ({ room, onNavigateBack, onSuccess }) => {
                   value={formData.name}
                   onChange={handleChange}
                   className={errors.name ? 'error' : ''}
-                  placeholder="E.g.: Lab A101"
+                  placeholder="E.g.: Computer Lab A101"
                   disabled={loading}
                 />
                 {errors.name && <span className="error-message">{errors.name}</span>}
@@ -330,7 +295,7 @@ const EditRoom = ({ room, onNavigateBack, onSuccess }) => {
               {/* Image Upload / URL */}
               <div className="form-group">
                 <div className="image-upload-header">
-                  <label>Room Image</label>
+                  <label>Lab Image</label>
                   {isStorageAvailable() && (
                     <button
                       type="button"
@@ -352,42 +317,19 @@ const EditRoom = ({ room, onNavigateBack, onSuccess }) => {
                       name="imageUrl"
                       value={formData.imageUrl}
                       onChange={handleChange}
-                      placeholder="https://example.com/room-image.jpg"
+                      placeholder="https://example.com/lab-image.jpg"
                       disabled={loading || isUploading}
                       className={errors.imageUrl ? 'error' : ''}
                     />
-                    
-                    {/* Current Image Display */}
-                    {room?.imageUrl && !selectedFile && !previewUrl && (
-                      <div className="current-image-section">
-                        <div className="current-image-preview">
-                          <img
-                            src={room.imageUrl}
-                            alt="Current room"
-                            className="current-image"
-                            onError={(e) => {
-                              e.target.style.display = 'none';
-                            }}
-                          />
-                          <div className="current-image-info">
-                            <span className="current-image-text">Current room image</span>
-                            <button
-                              type="button"
-                              className="remove-current-image-btn"
-                              onClick={() => {
-                                setFormData(prev => ({ ...prev, imageUrl: '' }));
-                                setUseUrlInput(false);
-                              }}
-                              disabled={loading || isUploading}
-                              title="Remove current image"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <line x1="18" y1="6" x2="6" y2="18"></line>
-                                <line x1="6" y1="6" x2="18" y2="18"></line>
-                              </svg>
-                            </button>
-                          </div>
-                        </div>
+                    {formData.imageUrl && (
+                      <div className="image-preview">
+                        <img
+                          src={formData.imageUrl}
+                          alt="Lab preview"
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                          }}
+                        />
                       </div>
                     )}
                   </>
@@ -472,7 +414,7 @@ const EditRoom = ({ room, onNavigateBack, onSuccess }) => {
                   name="description"
                   value={formData.description}
                   onChange={handleChange}
-                  placeholder="Detailed description of the room..."
+                  placeholder="Detailed description of the lab..."
                   rows="3"
                   disabled={loading}
                 />
@@ -493,7 +435,7 @@ const EditRoom = ({ room, onNavigateBack, onSuccess }) => {
                 className="btn-primary"
                 disabled={loading || isUploading}
               >
-                {isUploading ? `Uploading... ${uploadProgress}%` : loading ? 'Updating...' : 'Update Room'}
+                {isUploading ? `Uploading... ${uploadProgress}%` : loading ? 'Creating...' : 'Create Lab'}
               </button>
             </div>
           </form>
@@ -503,4 +445,4 @@ const EditRoom = ({ room, onNavigateBack, onSuccess }) => {
   );
 };
 
-export default EditRoom;
+export default CreateLab;

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { getAllRoles } from '../api';
 
 const RolesContext = createContext();
@@ -17,7 +17,7 @@ export const RolesProvider = ({ children }) => {
   const [error, setError] = useState(null);
   const [lastFetch, setLastFetch] = useState(null);
 
-  const fetchRoles = async (forceRefresh = false) => {
+  const fetchRoles = useCallback(async (forceRefresh = false) => {
     // Cache for 5 minutes
     const CACHE_DURATION = 5 * 60 * 1000;
     const now = Date.now();
@@ -71,11 +71,12 @@ export const RolesProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastFetch]);
 
   useEffect(() => {
     fetchRoles();
-  }, []);
+  }, [fetchRoles]);
 
   const value = {
     roles,

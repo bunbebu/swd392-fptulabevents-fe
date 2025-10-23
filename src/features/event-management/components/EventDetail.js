@@ -1,49 +1,49 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { roomsApi } from '../../../api';
+import { eventApi } from '../../../api';
 
 /**
- * Room Detail Component
- * Displays detailed information about a specific room
+ * Event Detail Component
+ * Displays detailed information about a specific event
  * 
  * Related User Stories:
- * - US-09: Admin - Manage labs and equipment
- * - US-22: Lecturer - View room availability before approving booking
+ * - US-XX: Admin - Manage events
+ * - US-XX: User - View event details
  */
-const RoomDetail = ({ roomId, onNavigateBack }) => {
-  const [room, setRoom] = useState(null);
+const EventDetail = ({ eventId, onNavigateBack }) => {
+  const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const loadRoomDetail = useCallback(async () => {
+  const loadEventDetail = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const detail = await roomsApi.getRoomById(roomId);
+      const detail = await eventApi.getEventById(eventId);
       const data = (detail && (detail.data || detail.Data)) || detail;
-      setRoom(data);
+      setEvent(data);
     } catch (err) {
-      console.error('Error loading room details:', err);
-      setError(err.message || 'Failed to load room details');
+      console.error('Error loading event details:', err);
+      setError(err.message || 'Failed to load event details');
     } finally {
       setLoading(false);
     }
-  }, [roomId]);
+  }, [eventId]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    loadRoomDetail();
-  }, [roomId, loadRoomDetail]);
+    loadEventDetail();
+  }, [eventId, loadEventDetail]);
 
   const getStatusBadgeClass = (status) => {
     switch (status?.toString()) {
-      case 'Available':
+      case 'Active':
         return 'status-badge status-available';
-      case 'Occupied':
-        return 'status-badge status-occupied';
-      case 'Maintenance':
-        return 'status-badge status-maintenance';
-      case 'Unavailable':
+      case 'Inactive':
         return 'status-badge status-unavailable';
+      case 'Cancelled':
+        return 'status-badge status-maintenance';
+      case 'Completed':
+        return 'status-badge status-occupied';
       default:
         return 'status-badge unknown';
     }
@@ -69,18 +69,18 @@ const RoomDetail = ({ roomId, onNavigateBack }) => {
             <button 
               className="back-button"
               onClick={onNavigateBack}
-              title="Back to Room List"
+              title="Back to Event List"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M19 12H5"></path>
                 <path d="M12 19l-7-7 7-7"></path>
               </svg>
             </button>
-            <h1>Room Details</h1>
+            <h1>Event Details</h1>
           </div>
         </div>
         <div className="page-content">
-          <div className="loading">Loading room details...</div>
+          <div className="loading">Loading event details...</div>
         </div>
       </div>
     );
@@ -94,21 +94,21 @@ const RoomDetail = ({ roomId, onNavigateBack }) => {
             <button 
               className="back-button"
               onClick={onNavigateBack}
-              title="Back to Room List"
+              title="Back to Event List"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M19 12H5"></path>
                 <path d="M12 19l-7-7 7-7"></path>
               </svg>
             </button>
-            <h1>Room Details</h1>
+            <h1>Event Details</h1>
           </div>
         </div>
         <div className="page-content">
           <div className="error-message">
             {error}
             <div className="error-actions">
-              <button onClick={loadRoomDetail} className="btn btn-primary">
+              <button onClick={loadEventDetail} className="btn btn-primary">
                 Retry
               </button>
             </div>
@@ -118,7 +118,7 @@ const RoomDetail = ({ roomId, onNavigateBack }) => {
     );
   }
 
-  if (!room) {
+  if (!event) {
     return (
       <div className="create-room-page">
         <div className="page-header">
@@ -126,18 +126,18 @@ const RoomDetail = ({ roomId, onNavigateBack }) => {
             <button 
               className="back-button"
               onClick={onNavigateBack}
-              title="Back to Room List"
+              title="Back to Event List"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M19 12H5"></path>
                 <path d="M12 19l-7-7 7-7"></path>
               </svg>
             </button>
-            <h1>Room Details</h1>
+            <h1>Event Details</h1>
           </div>
         </div>
         <div className="page-content">
-          <div className="no-data">Room not found</div>
+          <div className="no-data">Event not found</div>
         </div>
       </div>
     );
@@ -150,14 +150,14 @@ const RoomDetail = ({ roomId, onNavigateBack }) => {
           <button 
             className="back-button"
             onClick={onNavigateBack}
-            title="Back to Room List"
+            title="Back to Event List"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 12H5"></path>
               <path d="M12 19l-7-7 7-7"></path>
             </svg>
           </button>
-          <h1>Room Details</h1>
+          <h1>Event Details</h1>
         </div>
       </div>
 
@@ -166,104 +166,92 @@ const RoomDetail = ({ roomId, onNavigateBack }) => {
         <div className="detail-card">
           <div className="detail-card-header">
             <h3>Basic Information</h3>
-            <span className={getStatusBadgeClass(room.status)}>
-              {room.status || 'Unknown'}
+            <span className={getStatusBadgeClass(event.status)}>
+              {event.status || 'Unknown'}
             </span>
           </div>
           <div className="detail-grid">
             <div className="detail-item">
-              <label>Room Name:</label>
-              <span className="detail-value">{room.name}</span>
+              <label>Event Title:</label>
+              <span className="detail-value">{event.title}</span>
             </div>
             <div className="detail-item">
               <label>Location:</label>
-              <span className="detail-value">{room.location}</span>
+              <span className="detail-value">{event.location || 'N/A'}</span>
             </div>
             <div className="detail-item">
-              <label>Capacity:</label>
-              <span className="detail-value">{room.capacity} people</span>
+              <label>Start Date:</label>
+              <span className="detail-value">{formatDate(event.startDate)}</span>
             </div>
             <div className="detail-item">
-              <label>Equipment Count:</label>
-              <span className="detail-value">{room.equipmentCount || 0}</span>
+              <label>End Date:</label>
+              <span className="detail-value">{formatDate(event.endDate)}</span>
             </div>
             <div className="detail-item">
-              <label>Active Bookings:</label>
-              <span className="detail-value">{room.activeBookings || 0}</span>
+              <label>Created By:</label>
+              <span className="detail-value">{event.createdBy || 'N/A'}</span>
+            </div>
+            <div className="detail-item">
+              <label>Visibility:</label>
+              <span className="detail-value">{event.visibility ? 'Public' : 'Private'}</span>
+            </div>
+            <div className="detail-item">
+              <label>Booking Count:</label>
+              <span className="detail-value">{event.bookingCount || 0}</span>
+            </div>
+            <div className="detail-item">
+              <label>Is Upcoming:</label>
+              <span className="detail-value">{event.isUpcoming ? 'Yes' : 'No'}</span>
             </div>
             <div className="detail-item">
               <label>Created At:</label>
-              <span className="detail-value">{formatDate(room.createdAt)}</span>
+              <span className="detail-value">{formatDate(event.createdAt)}</span>
             </div>
             <div className="detail-item">
               <label>Last Updated:</label>
-              <span className="detail-value">{formatDate(room.lastUpdatedAt)}</span>
+              <span className="detail-value">{formatDate(event.lastUpdatedAt)}</span>
             </div>
-            {room.description && (
+            {event.description && (
               <div className="detail-item full-width">
                 <label>Description:</label>
-                <span className="detail-value">{room.description}</span>
+                <span className="detail-value">{event.description}</span>
+              </div>
+            )}
+            {event.recurrenceRule && (
+              <div className="detail-item full-width">
+                <label>Recurrence Rule:</label>
+                <span className="detail-value">{event.recurrenceRule}</span>
               </div>
             )}
           </div>
         </div>
 
-        {/* Room Image */}
-        {room.imageUrl && (
+        {/* Bookings List */}
+        {event.bookings && event.bookings.length > 0 && (
           <div className="detail-card">
             <div className="detail-card-header">
-              <h3>Room Image</h3>
-            </div>
-            <div className="room-image-container">
-              <img src={room.imageUrl} alt={room.name} className="room-image" />
-            </div>
-          </div>
-        )}
-
-        {/* Equipment List */}
-        {room.equipments && room.equipments.length > 0 && (
-          <div className="detail-card">
-            <div className="detail-card-header">
-              <h3>Equipment ({room.equipments.length})</h3>
-            </div>
-            <div className="equipment-list">
-              {room.equipments.map((equipment) => (
-                <div key={equipment.id} className="equipment-item">
-                  <div className="equipment-info">
-                    <span className="equipment-name">{equipment.name}</span>
-                    <span className="equipment-type">{equipment.type}</span>
-                  </div>
-                  <span className={getStatusBadgeClass(equipment.status)}>
-                    {equipment.status}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Recent Bookings */}
-        {room.recentBookings && room.recentBookings.length > 0 && (
-          <div className="detail-card">
-            <div className="detail-card-header">
-              <h3>Recent Bookings ({room.recentBookings.length})</h3>
+              <h3>Bookings ({event.bookings.length})</h3>
             </div>
             <div className="bookings-table">
               <table>
                 <thead>
                   <tr>
                     <th>User</th>
+                    <th>Room</th>
                     <th>Start Time</th>
                     <th>End Time</th>
+                    <th>Purpose</th>
                     <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {room.recentBookings.map((booking) => (
+                  {event.bookings.map((booking) => (
                     <tr key={booking.id}>
                       <td>{booking.userName}</td>
+                      <td>{booking.roomName}</td>
                       <td>{formatDate(booking.startTime)}</td>
                       <td>{formatDate(booking.endTime)}</td>
+                      <td>{booking.purpose}</td>
                       <td>
                         <span className={`status-badge status-${booking.status.toLowerCase()}`}>
                           {booking.status}
@@ -282,5 +270,5 @@ const RoomDetail = ({ roomId, onNavigateBack }) => {
   );
 };
 
-export default RoomDetail;
+export default EventDetail;
 

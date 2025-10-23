@@ -433,7 +433,7 @@ const EditEquipment = ({ equipmentId, onNavigateBack, onSuccess }) => {
                         <div className="current-image-preview">
                           <img
                             src={formData.imageUrl}
-                            alt="Current equipment image"
+                            alt="Current equipment"
                             className="current-image"
                             onError={(e) => { e.target.style.display = 'none'; }}
                           />

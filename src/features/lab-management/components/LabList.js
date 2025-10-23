@@ -1,32 +1,30 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { roomsApi, authApi } from '../../../api';
-import RoomStatusForm from '../admin/RoomStatusForm';
-import CreateRoom from '../admin/CreateRoom';
-import EditRoom from '../admin/EditRoom';
+import { labsApi, authApi } from '../../../api';
+import LabStatusForm from '../admin/LabStatusForm';
+import CreateLab from '../admin/CreateLab';
+import EditLab from '../admin/EditLab';
 
 /**
- * Room List Component - Common for both Admin and Lecturer
+ * Lab List Component - Common for both Admin and Lecturer
  *
- * For Admin: Full room management with create/edit/delete actions
- * For Lecturer: View room availability for booking approval
+ * For Admin: Full lab management with create/edit/delete actions
+ * For Lecturer: View lab availability
  *
  * Related User Stories:
  * - US-09: Admin - Manage labs and equipment
- * - US-22: Lecturer - View room availability before approving booking
  *
  * Related Use Cases:
- * - UC-10: Manage Rooms (Admin)
- * - UC-40: Room Status Update (Admin)
+ * - UC-10: Manage Labs (Admin)
  */
-const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
-  const [rooms, setRooms] = useState([]);
+const LabList = ({ userRole = 'Student', onSelectLab, onViewLab }) => {
+  const [labs, setLabs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [paginationLoading, setPaginationLoading] = useState(false);
   const [error, setError] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(8);
   const [totalPages, setTotalPages] = useState(1);
-  const [totalRooms, setTotalRooms] = useState(0);
+  const [totalLabs, setTotalLabs] = useState(0);
   // eslint-disable-next-line no-unused-vars
   const [stats, setStats] = useState({ total: 0, available: 0 });
   const [toast, setToast] = useState(null);
@@ -35,9 +33,9 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
   const [showCreatePage, setShowCreatePage] = useState(false);
   const [showEditPage, setShowEditPage] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
-  const [selectedRoom, setSelectedRoom] = useState(null);
+  const [selectedLab, setSelectedLab] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
-  const [confirmDeleteRoom, setConfirmDeleteRoom] = useState(null);
+  const [confirmDeleteLab, setConfirmDeleteLab] = useState(null);
   
   // API filter states
   const [apiFilters, setApiFilters] = useState({
@@ -58,8 +56,8 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
     showToast._tid = window.setTimeout(() => setToast(null), 3000);
   };
 
-  // Load room data with pagination
-  const loadRooms = useCallback(async (page = currentPage, isPagination = false) => {
+  // Load lab data with pagination
+  const loadLabs = useCallback(async (page = currentPage, isPagination = false) => {
     try {
       // Only show main loading on initial load, not on pagination
       if (isPagination) {
@@ -83,16 +81,16 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
         )
       );
 
-      // Try to get room list first, handle other calls separately
-      let roomList;
+      // Try to get lab list first, handle other calls separately
+      let labList;
       try {
-        roomList = await roomsApi.getRooms(cleanFilters);
+        labList = await labsApi.getLabs(cleanFilters);
       } catch (authErr) {
         // If 401, try to refresh token and retry once
         if (authErr.status === 401) {
           try {
             await authApi.refreshAuthToken();
-            roomList = await roomsApi.getRooms(cleanFilters);
+            labList = await labsApi.getLabs(cleanFilters);
           } catch (refreshErr) {
             throw authErr; // Throw original error if refresh fails
           }
@@ -106,59 +104,59 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
       let availableCount = 0;
       
       try {
-        totalCount = await roomsApi.getRoomCount();
+        totalCount = await labsApi.getLabCount();
       } catch (countErr) {
         console.warn('Failed to get total count:', countErr);
-        // Fallback: count from room list if it's an array
-        if (Array.isArray(roomList)) {
-          totalCount = roomList.length;
+        // Fallback: count from lab list if it's an array
+        if (Array.isArray(labList)) {
+          totalCount = labList.length;
         }
       }
       
       try {
-        availableCount = await roomsApi.getAvailableRoomCount();
+        availableCount = await labsApi.getActiveLabCount();
       } catch (availableErr) {
         console.warn('Failed to get available count:', availableErr);
-        // Fallback: count available rooms from list
-        if (Array.isArray(roomList)) {
-          availableCount = roomList.filter(room => room.status === 'Available').length;
+        // Fallback: count available labs from list
+        if (Array.isArray(labList)) {
+          availableCount = labList.filter(lab => lab.status === 'Active').length;
         }
       }
 
-      console.log('Room API responses:', { roomList, totalCount, availableCount });
+      console.log('Lab API responses:', { labList, totalCount, availableCount });
 
       // Handle both array and paginated response formats
-      let roomData = [];
+      let labData = [];
       // eslint-disable-next-line no-unused-vars
       let totalPagesFromApi = 1;
       let totalCountFromApi = 0;
       const serverPaginatedRequested = filters.page !== undefined || filters.pageSize !== undefined;
 
-      if (Array.isArray(roomList)) {
+      if (Array.isArray(labList)) {
         // If backend is already paginating (we sent Page/PageSize), do NOT slice again
         if (serverPaginatedRequested) {
-          roomData = roomList;
+          labData = labList;
           // We'll compute total pages from the count endpoint below
-          totalCountFromApi = roomList.length;
+          totalCountFromApi = labList.length;
           totalPagesFromApi = 1; // temporary; will be overridden by derived calculation
         } else {
           // Backend ignored pagination; do client-side pagination
-          roomData = roomList;
-          totalCountFromApi = roomList.length;
+          labData = labList;
+          totalCountFromApi = labList.length;
           totalPagesFromApi = Math.max(1, Math.ceil(totalCountFromApi / pageSize));
           const start = (page - 1) * pageSize;
           const end = start + pageSize;
-          roomData = roomList.slice(start, end);
+          labData = labList.slice(start, end);
         }
-      } else if (roomList?.data && Array.isArray(roomList.data)) {
-        roomData = roomList.data;
-        totalPagesFromApi = roomList.totalPages || 1;
-        totalCountFromApi = roomList.totalCount || roomList.data.length;
-      } else if (roomList?.Data && Array.isArray(roomList.Data)) {
-        roomData = roomList.Data;
+      } else if (labList?.data && Array.isArray(labList.data)) {
+        labData = labList.data;
+        totalPagesFromApi = labList.totalPages || 1;
+        totalCountFromApi = labList.totalCount || labList.data.length;
+      } else if (labList?.Data && Array.isArray(labList.Data)) {
+        labData = labList.Data;
         // eslint-disable-next-line no-unused-vars
-        totalPagesFromApi = roomList.TotalPages || 1;
-        totalCountFromApi = roomList.TotalCount || roomList.Data.length;
+        totalPagesFromApi = labList.TotalPages || 1;
+        totalCountFromApi = labList.TotalCount || labList.Data.length;
       }
 
       // Ensure counts are numbers
@@ -176,26 +174,26 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
 
       console.log('Normalized counts:', { normalizedTotalCount, normalizedAvailableCount, derivedTotalCount, derivedTotalPages });
 
-      setRooms(roomData);
+      setLabs(labData);
       setTotalPages(derivedTotalPages);
-      setTotalRooms(derivedTotalCount);
+      setTotalLabs(derivedTotalCount);
       setStats({ total: normalizedTotalCount, available: normalizedAvailableCount });
     } catch (err) {
-      console.error('Error loading rooms:', err);
+      console.error('Error loading labs:', err);
       
       // Handle specific error types
       if (err.status === 401) {
         setError('Authentication required. Please log in again.');
       } else if (err.status === 403) {
-        setError('Access denied. You do not have permission to view rooms.');
+        setError('Access denied. You do not have permission to view labs.');
       } else if (err.status === 0) {
         setError('Unable to connect to server. Please check your internet connection.');
       } else {
-        setError(err.message || 'Unable to load room list');
+        setError(err.message || 'Unable to load lab list');
       }
       
-      setRooms([]);
-      setTotalRooms(0);
+      setLabs([]);
+      setTotalLabs(0);
       setTotalPages(1);
     } finally {
       setLoading(false);
@@ -204,84 +202,83 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
   }, [apiFilters, currentPage, pageSize]);
 
   useEffect(() => {
-    loadRooms();
-  }, [loadRooms]);
+    loadLabs();
+  }, [loadLabs]);
 
   // Pagination handler
   const handlePageChange = (newPage) => {
     if (newPage >= 1 && newPage <= totalPages) {
       setCurrentPage(newPage);
-      loadRooms(newPage, true);
+      loadLabs(newPage, true);
     }
   };
 
   // CRUD operation handlers
-  const handleCreateRoomSuccess = async () => {
+  const handleCreateLabSuccess = async () => {
     setShowCreatePage(false);
-    showToast('Room created successfully!', 'success');
-    await loadRooms(currentPage);
+    showToast('Lab created successfully!', 'success');
+    await loadLabs(currentPage);
   };
 
-  const handleEditRoomSuccess = async () => {
+  const handleEditLabSuccess = async () => {
     setShowEditPage(false);
-    setSelectedRoom(null);
-    showToast('Room updated successfully!', 'success');
-    await loadRooms(currentPage);
+    setSelectedLab(null);
+    showToast('Lab updated successfully!', 'success');
+    await loadLabs(currentPage);
   };
 
-
-  const handleDeleteRoom = async (roomId) => {
-    const roomToDelete = rooms.find(r => r.id === roomId);
+  const handleDeleteLab = async (labId) => {
+    const labToDelete = labs.find(l => l.id === labId);
     
     // Remove from UI immediately
-    setRooms(prev => prev.filter(room => room.id !== roomId));
-    setTotalRooms(prev => prev - 1);
+    setLabs(prev => prev.filter(lab => lab.id !== labId));
+    setTotalLabs(prev => prev - 1);
 
     try {
-      await roomsApi.deleteRoom(roomId);
-      setConfirmDeleteRoom(null);
-      showToast('Room deleted successfully!', 'success');
+      await labsApi.deleteLab(labId, { reason: 'Admin deletion' });
+      setConfirmDeleteLab(null);
+      showToast('Lab deleted successfully!', 'success');
     } catch (err) {
-      // Restore room on error
-      setRooms(prev => [...prev, roomToDelete]);
-      setTotalRooms(prev => prev + 1);
-      showToast(err.message || 'Failed to delete room', 'error');
+      // Restore lab on error
+      setLabs(prev => [...prev, labToDelete]);
+      setTotalLabs(prev => prev + 1);
+      showToast(err.message || 'Failed to delete lab', 'error');
     }
   };
 
   const handleStatusUpdate = async (statusData) => {
-    const originalRoom = rooms.find(r => r.id === selectedRoom.id);
+    const originalLab = labs.find(l => l.id === selectedLab.id);
     
     // Create optimistic update
-    const optimisticRoom = {
-      ...originalRoom,
+    const optimisticLab = {
+      ...originalLab,
       status: statusData.status,
       isOptimistic: true
     };
 
     // Update UI immediately
-    setRooms(prev => prev.map(room => 
-      room.id === selectedRoom.id ? optimisticRoom : room
+    setLabs(prev => prev.map(lab => 
+      lab.id === selectedLab.id ? optimisticLab : lab
     ));
 
     try {
       setActionLoading(true);
-      const updatedRoom = await roomsApi.updateRoomStatus(selectedRoom.id, statusData.status, statusData.notes || '');
+      const updatedLab = await labsApi.updateLabStatus(selectedLab.id, statusData.status, statusData.notes || '');
       
-      // Replace with real updated room
-      setRooms(prev => prev.map(room => 
-        room.id === selectedRoom.id 
-          ? { ...updatedRoom, isOptimistic: false }
-          : room
+      // Replace with real updated lab
+      setLabs(prev => prev.map(lab => 
+        lab.id === selectedLab.id 
+          ? { ...updatedLab, isOptimistic: false }
+          : lab
       ));
       
       setShowStatusModal(false);
-      setSelectedRoom(null);
+      setSelectedLab(null);
       showToast('Status updated successfully!', 'success');
     } catch (err) {
-      // Revert to original room on error
-      setRooms(prev => prev.map(room => 
-        room.id === selectedRoom.id ? originalRoom : room
+      // Revert to original lab on error
+      setLabs(prev => prev.map(lab => 
+        lab.id === selectedLab.id ? originalLab : lab
       ));
       showToast(err.message || 'Failed to update status', 'error');
     } finally {
@@ -290,21 +287,21 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
   };
 
   // Open edit page
-  const openEditPage = (room) => {
-    setSelectedRoom(room);
+  const openEditPage = (lab) => {
+    setSelectedLab(lab);
     setShowEditPage(true);
   };
 
   // Open status modal
-  const openStatusModal = (room) => {
-    setSelectedRoom(room);
+  const openStatusModal = (lab) => {
+    setSelectedLab(lab);
     setShowStatusModal(true);
   };
 
   // Apply filters
   const applyFilters = () => {
     setCurrentPage(1);
-    loadRooms(1);
+    loadLabs(1);
   };
 
   // Clear filters
@@ -319,19 +316,15 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
       pageSize: 8
     });
     setCurrentPage(1);
-    loadRooms(1);
+    loadLabs(1);
   };
 
   // Get status badge class
   const getStatusBadgeClass = (status) => {
     switch (status?.toString()) {
-      case 'Available':
+      case 'Active':
         return 'status-badge status-available';
-      case 'Occupied':
-        return 'status-badge status-occupied';
-      case 'Maintenance':
-        return 'status-badge status-maintenance';
-      case 'Unavailable':
+      case 'Inactive':
         return 'status-badge status-unavailable';
       default:
         return 'status-badge unknown';
@@ -343,25 +336,25 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
       <div className="room-list-container">
         <div className="loading">
           <div className="loading-spinner"></div>
-          Loading rooms...
+          Loading labs...
         </div>
       </div>
     );
   }
 
   return (
-    <div className="room-list-container">
+    <div className="lab-list-container">
       {showCreatePage ? (
-        <CreateRoom onNavigateBack={() => setShowCreatePage(false)} onSuccess={handleCreateRoomSuccess} />
+        <CreateLab onNavigateBack={() => setShowCreatePage(false)} onSuccess={handleCreateLabSuccess} />
       ) : showEditPage ? (
-        <EditRoom room={selectedRoom} onNavigateBack={() => {
+        <EditLab lab={selectedLab} onNavigateBack={() => {
           setShowEditPage(false);
-          setSelectedRoom(null);
-        }} onSuccess={handleEditRoomSuccess} />
+          setSelectedLab(null);
+        }} onSuccess={handleEditLabSuccess} />
       ) : (
         <>
-          <div className="room-list-header">
-            <h2>Room Management</h2>
+          <div className="lab-list-header">
+            <h2>Lab Management</h2>
             {isAdmin && (
               <button 
                 className="btn-new-booking"
@@ -372,77 +365,77 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                   <path d="M5 12h14"></path>
                   <path d="M12 5v14"></path>
                 </svg>
-                Create New Room
+                Create New Lab
               </button>
             )}
           </div>
 
           {/* Success/Error Notification above table */}
           {toast && (
-            <div 
-              className="table-notification"
-              style={{
-                backgroundColor: toast.type === 'success' ? '#d1fae5' : '#fee2e2',
-                color: toast.type === 'success' ? '#065f46' : '#dc2626',
-                border: toast.type === 'success' ? '1px solid #a7f3d0' : '1px solid #fecaca',
-                padding: '12px 16px',
-                borderRadius: '8px',
-                marginBottom: '20px',
-                fontSize: '14px',
-                fontWeight: '500',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px'
-              }}
+          <div 
+            className="table-notification"
+            style={{
+              backgroundColor: toast.type === 'success' ? '#d1fae5' : '#fee2e2',
+              color: toast.type === 'success' ? '#065f46' : '#dc2626',
+              border: toast.type === 'success' ? '1px solid #a7f3d0' : '1px solid #fecaca',
+              padding: '12px 16px',
+              borderRadius: '8px',
+              marginBottom: '20px',
+              fontSize: '14px',
+              fontWeight: '500',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            <svg 
+              width="16" 
+              height="16" 
+              viewBox="0 0 24 24" 
+              fill="none" 
+              stroke="currentColor" 
+              strokeWidth="2" 
+              strokeLinecap="round" 
+              strokeLinejoin="round"
             >
-              <svg 
-                width="16" 
-                height="16" 
-                viewBox="0 0 24 24" 
-                fill="none" 
-                stroke="currentColor" 
-                strokeWidth="2" 
-                strokeLinecap="round" 
-                strokeLinejoin="round"
-              >
-                {toast.type === 'success' ? (
-                  <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                ) : (
-                  <path d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                )}
-              </svg>
-              {toast.message}
-            </div>
+              {toast.type === 'success' ? (
+                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              ) : (
+                <path d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              )}
+            </svg>
+            {toast.message}
+          </div>
           )}
 
           {error && (
-            <div className="error-message">
-              {error}
-              <div className="error-actions">
-                <button onClick={() => loadRooms()} className="btn btn-secondary">
-                  Retry
+          <div className="error-message">
+            {error}
+            <div className="error-actions">
+              <button onClick={() => loadLabs()} className="btn btn-secondary">
+                Retry
+              </button>
+              {error.includes('Authentication required') && (
+                <button 
+                  className="btn btn-primary"
+                  onClick={() => {
+                    // Clear tokens and redirect to login
+                    localStorage.removeItem('accessToken');
+                    localStorage.removeItem('refreshToken');
+                    sessionStorage.removeItem('accessToken');
+                    sessionStorage.removeItem('refreshToken');
+                    window.location.href = '/login';
+                  }}
+                >
+                  Go to Login
                 </button>
-                {error.includes('Authentication required') && (
-                  <button 
-                    className="btn btn-primary"
-                    onClick={() => {
-                      // Clear tokens and redirect to login
-                      localStorage.removeItem('accessToken');
-                      localStorage.removeItem('refreshToken');
-                      sessionStorage.removeItem('accessToken');
-                      sessionStorage.removeItem('refreshToken');
-                      window.location.href = '/login';
-                    }}
-                  >
-                    Go to Login
-                  </button>
-                )}
-              </div>
+              )}
             </div>
+          </div>
           )}
 
-          <div className="room-list-stats">
-            <span>Total rooms: {totalRooms}</span>
+          <div className="lab-list-stats">
+            <span>Total labs: {totalLabs}</span>
             <span>Page {currentPage} / {totalPages}</span>
           </div>
 
@@ -460,8 +453,8 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                   value={apiFilters.name || apiFilters.location || ''}
                   onChange={(e) => {
                     const value = e.target.value;
-                    setApiFilters(prev => ({ 
-                      ...prev, 
+                    setApiFilters(prev => ({
+                      ...prev,
                       name: value,
                       location: value
                     }));
@@ -469,12 +462,12 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                   className="search-input"
                 />
                 {(apiFilters.name || apiFilters.location) && (
-                  <button 
+                  <button
                     className="clear-search"
-                    onClick={() => setApiFilters(prev => ({ 
-                      ...prev, 
-                      name: '', 
-                      location: '' 
+                    onClick={() => setApiFilters(prev => ({
+                      ...prev,
+                      name: '',
+                      location: ''
                     }))}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -492,10 +485,8 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                   className="filter-select"
                 >
                   <option value="">All Status</option>
-                  <option value="Available">Available</option>
-                  <option value="Occupied">Occupied</option>
-                  <option value="Maintenance">Maintenance</option>
-                  <option value="Unavailable">Unavailable</option>
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
                 </select>
                 <input
                   type="number"
@@ -512,16 +503,16 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                   className="filter-input"
                 />
               </div>
-              
+
               <div className="filter-actions">
-                <button 
+                <button
                   className="btn btn-primary"
                   onClick={applyFilters}
                   disabled={actionLoading}
                 >
                   Apply Filters
                 </button>
-                <button 
+                <button
                   className="btn btn-secondary"
                   onClick={clearFilters}
                   disabled={actionLoading}
@@ -532,8 +523,8 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
             </div>
           </div>
 
-          <div className="room-table-container">
-            <table className="room-table">
+          <div className="lab-table-container">
+            <table className="lab-table">
               <thead>
                 <tr>
                   <th>ID</th>
@@ -542,7 +533,7 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                   <th>Capacity</th>
                   <th>Status</th>
                   <th>Equipment Count</th>
-                  <th>Active Bookings</th>
+                  <th>Members</th>
                   {isAdmin && <th>Actions</th>}
                 </tr>
               </thead>
@@ -551,7 +542,7 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                   <tr>
                     <td colSpan={isAdmin ? "8" : "7"} className="loading-cell">
                       <div className="loading-spinner"></div>
-                      Loading rooms...
+                      Loading labs...
                     </td>
                   </tr>
                 ) : paginationLoading ? (
@@ -568,18 +559,18 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                       {isAdmin && <td><div className="skeleton-text"></div></td>}
                     </tr>
                   ))
-                ) : rooms.length === 0 ? (
+                ) : labs.length === 0 ? (
                   <tr>
                     <td colSpan={isAdmin ? "8" : "7"} className="no-data">
-                      No room data
+                      No lab data
                     </td>
                   </tr>
                 ) : (
-                  rooms.map((room) => (
-                    <tr key={room.id} className={room.isOptimistic ? 'optimistic-row' : ''}>
+                  labs.map((lab) => (
+                    <tr key={lab.id} className={lab.isOptimistic ? 'optimistic-row' : ''}>
                       <td>
-                        {room.id?.substring(0, 8)}...
-                        {room.isOptimistic && (
+                        {lab.id?.substring(0, 8)}...
+                        {lab.isOptimistic && (
                           <span className="optimistic-indicator" title="Saving...">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                               <path d="M21 12a9 9 0 11-6.219-8.56"/>
@@ -589,29 +580,29 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                       </td>
                       <td className="col-name">
                         <div>
-                          <strong>{room.name}</strong>
-                          {room.description && (
-                            <div className="text-muted small">{room.description}</div>
+                          <strong>{lab.name}</strong>
+                          {lab.description && (
+                            <div className="text-muted small">{lab.description}</div>
                           )}
                         </div>
                       </td>
-                      <td className="col-location">{room.location}</td>
-                      <td>{room.capacity}</td>
+                      <td className="col-location">{lab.location || 'N/A'}</td>
+                      <td>{lab.capacity}</td>
                       <td>
-                        <span className={getStatusBadgeClass(room.status)}>
-                          {room.status || 'Unknown'}
+                        <span className={getStatusBadgeClass(lab.status)}>
+                          {lab.status || 'Unknown'}
                         </span>
                       </td>
-                      <td>{room.equipmentCount || 0}</td>
-                      <td>{room.activeBookings || 0}</td>
+                      <td>{lab.equipmentCount || 0}</td>
+                      <td>{lab.memberCount || 0}</td>
                       {isAdmin && (
                         <td>
                           <div className="action-buttons">
                             <button
                               className="btn btn-sm btn-icon btn-icon-outline color-yellow"
                               onClick={() => {
-                                if (onViewRoom) {
-                                  onViewRoom(room.id);
+                                if (onViewLab) {
+                                  onViewLab(lab.id);
                                 }
                               }}
                               disabled={actionLoading}
@@ -625,9 +616,9 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                             </button>
                             <button
                               className="btn btn-sm btn-icon btn-icon-outline color-blue"
-                              onClick={() => openEditPage(room)}
+                              onClick={() => openEditPage(lab)}
                               disabled={actionLoading}
-                              aria-label="Edit room"
+                              aria-label="Edit lab"
                               title="Edit"
                             >
                               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -637,7 +628,7 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                             </button>
                             <button
                               className="btn btn-sm btn-icon btn-icon-outline color-purple"
-                              onClick={() => openStatusModal(room)}
+                              onClick={() => openStatusModal(lab)}
                               disabled={actionLoading}
                               aria-label="Update status"
                               title="Update Status"
@@ -649,9 +640,9 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                             </button>
                             <button
                               className="btn btn-sm btn-icon btn-icon-outline color-red"
-                              onClick={() => setConfirmDeleteRoom(room)}
+                              onClick={() => setConfirmDeleteLab(lab)}
                               disabled={actionLoading}
-                              aria-label="Delete room"
+                              aria-label="Delete lab"
                               title="Delete"
                             >
                               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -723,14 +714,13 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
 
       {/* Modals */}
 
-
-      {showStatusModal && selectedRoom && (
-        <RoomStatusForm
-          room={selectedRoom}
+      {showStatusModal && selectedLab && (
+        <LabStatusForm
+          lab={selectedLab}
           onSubmit={handleStatusUpdate}
           onCancel={() => {
             setShowStatusModal(false);
-            setSelectedRoom(null);
+            setSelectedLab(null);
           }}
           loading={actionLoading}
         />
@@ -739,27 +729,27 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
 
 
       {/* Delete Confirmation Modal */}
-      {confirmDeleteRoom && (
+      {confirmDeleteLab && (
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header">
               <h3>Confirm Delete</h3>
             </div>
             <div className="modal-body">
-              <p>Are you sure you want to delete room <strong>{confirmDeleteRoom.name}</strong>?</p>
+              <p>Are you sure you want to delete lab <strong>{confirmDeleteLab.name}</strong>?</p>
               <p className="text-muted small">This action cannot be undone.</p>
             </div>
             <div className="modal-footer">
               <button
                 className="btn btn-secondary"
-                onClick={() => setConfirmDeleteRoom(null)}
+                onClick={() => setConfirmDeleteLab(null)}
                 disabled={actionLoading}
               >
                 Cancel
               </button>
               <button
                 className="btn btn-danger"
-                onClick={() => handleDeleteRoom(confirmDeleteRoom.id)}
+                onClick={() => handleDeleteLab(confirmDeleteLab.id)}
                 disabled={actionLoading}
               >
                 {actionLoading ? 'Deleting...' : 'Delete'}
@@ -772,4 +762,5 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
   );
 };
 
-export default RoomList;
+export default LabList;
+

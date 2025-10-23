@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { AdminDashboard, Login, Home } from './features';
+import { AdminDashboard, LecturerDashboard } from './dashboard';
+import { Login, Home } from './features';
 import { Register, GoogleCallback } from './features/authentication';
 import { authApi } from './api';
 import { RolesProvider } from './contexts/RolesContext';
@@ -20,6 +21,8 @@ function App() {
   };
 
   const isAdmin = auth?.user?.roles?.includes('Admin');
+  const isLecturer = auth?.user?.roles?.includes('Lecturer') || auth?.user?.roles?.includes('Teacher');
+  
   useEffect(() => {
     // Try bootstrapping from storage
     const accessToken = window.localStorage.getItem('accessToken') || window.sessionStorage.getItem('accessToken');
@@ -52,6 +55,11 @@ function App() {
   if (isAdmin) return (
     <RolesProvider>
       <AdminDashboard user={auth.user} />
+    </RolesProvider>
+  );
+  if (isLecturer) return (
+    <RolesProvider>
+      <LecturerDashboard user={auth.user} />
     </RolesProvider>
   );
   if (auth) return <Home user={auth.user} />;

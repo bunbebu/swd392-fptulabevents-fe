@@ -1,27 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { roomsApi } from '../../../api';
-import { EQUIPMENT_TYPE_OPTIONS } from '../../../constants/equipmentConstants';
 
 /**
- * Equipment Form Component - Admin Only
+ * Lab Form Component - Admin Only
  * 
- * Form for creating and editing equipment
+ * Form for creating and editing labs
  * 
  * Related Use Cases:
- * - UC-10: Manage Equipment (Admin)
+ * - UC-10: Manage Labs (Admin)
  */
-const EquipmentForm = ({ equipment, onSubmit, onCancel, loading }) => {
-  const isEdit = !!equipment;
+const LabForm = ({ lab, onSubmit, onCancel, loading }) => {
+  const isEdit = !!lab;
   
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    serialNumber: '',
-    type: 0,
-    imageUrl: '',
+    location: '',
+    capacity: 0,
     roomId: '',
-    lastMaintenanceDate: '',
-    nextMaintenanceDate: ''
+    status: 0
   });
 
   const [errors, setErrors] = useState({});
@@ -29,21 +26,17 @@ const EquipmentForm = ({ equipment, onSubmit, onCancel, loading }) => {
   const [roomsLoading, setRoomsLoading] = useState(false);
 
   useEffect(() => {
-    if (equipment) {
+    if (lab) {
       setFormData({
-        name: equipment.name || '',
-        description: equipment.description || '',
-        serialNumber: equipment.serialNumber || '',
-        type: equipment.type || 0,
-        imageUrl: equipment.imageUrl || '',
-        roomId: equipment.roomId || '',
-        lastMaintenanceDate: equipment.lastMaintenanceDate ? 
-          new Date(equipment.lastMaintenanceDate).toISOString().slice(0, 16) : '',
-        nextMaintenanceDate: equipment.nextMaintenanceDate ? 
-          new Date(equipment.nextMaintenanceDate).toISOString().slice(0, 16) : ''
+        name: lab.name || '',
+        description: lab.description || '',
+        location: lab.location || '',
+        capacity: lab.capacity || 0,
+        roomId: lab.roomId || '',
+        status: lab.status === 'Active' ? 0 : 1
       });
     }
-  }, [equipment]);
+  }, [lab]);
 
   // Load rooms when component mounts
   useEffect(() => {
@@ -79,15 +72,11 @@ const EquipmentForm = ({ equipment, onSubmit, onCancel, loading }) => {
     const newErrors = {};
 
     if (!formData.name.trim()) {
-      newErrors.name = 'Equipment name is required';
+      newErrors.name = 'Lab name is required';
     }
 
-    if (!formData.serialNumber.trim()) {
-      newErrors.serialNumber = 'Serial number is required';
-    }
-
-    if (formData.type < 0 || formData.type > 6) {
-      newErrors.type = 'Type must be between 0 and 6';
+    if (!formData.capacity || formData.capacity <= 0) {
+      newErrors.capacity = 'Capacity must be greater than 0';
     }
 
     if (formData.roomId && !isValidUUID(formData.roomId)) {
@@ -114,14 +103,10 @@ const EquipmentForm = ({ equipment, onSubmit, onCancel, loading }) => {
       const submitData = {
         name: formData.name.trim(),
         description: formData.description.trim(),
-        serialNumber: formData.serialNumber.trim(),
-        type: parseInt(formData.type),
-        imageUrl: formData.imageUrl.trim() || null,
+        location: formData.location.trim(),
+        capacity: parseInt(formData.capacity),
         roomId: formData.roomId.trim() || null,
-        lastMaintenanceDate: formData.lastMaintenanceDate ? 
-          new Date(formData.lastMaintenanceDate).toISOString() : null,
-        nextMaintenanceDate: formData.nextMaintenanceDate ? 
-          new Date(formData.nextMaintenanceDate).toISOString() : null
+        status: parseInt(formData.status)
       };
 
       await onSubmit(submitData);
@@ -134,17 +119,17 @@ const EquipmentForm = ({ equipment, onSubmit, onCancel, loading }) => {
     <div className="modal-overlay" onClick={onCancel}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>{isEdit ? 'Edit Equipment' : 'Add New Equipment'}</h3>
+          <h3>{isEdit ? 'Edit Lab' : 'Add New Lab'}</h3>
           <button className="modal-close" onClick={onCancel}>×</button>
         </div>
 
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
             <div className="form-grid">
-              {/* Equipment Name */}
+              {/* Lab Name */}
               <div className="form-group">
                 <label htmlFor="name">
-                  Equipment Name <span className="required">*</span>
+                  Lab Name <span className="required">*</span>
                 </label>
                 <input
                   type="text"
@@ -153,69 +138,48 @@ const EquipmentForm = ({ equipment, onSubmit, onCancel, loading }) => {
                   value={formData.name}
                   onChange={handleChange}
                   className={errors.name ? 'error' : ''}
-                  placeholder="E.g.: Projector"
+                  placeholder="E.g.: AI Research Lab"
                   disabled={loading}
                 />
                 {errors.name && <span className="error-message">{errors.name}</span>}
               </div>
 
-              {/* Serial Number */}
+              {/* Location */}
               <div className="form-group">
-                <label htmlFor="serialNumber">
-                  Serial Number <span className="required">*</span>
+                <label htmlFor="location">
+                  Location
                 </label>
                 <input
                   type="text"
-                  id="serialNumber"
-                  name="serialNumber"
-                  value={formData.serialNumber}
+                  id="location"
+                  name="location"
+                  value={formData.location}
                   onChange={handleChange}
-                  className={errors.serialNumber ? 'error' : ''}
-                  placeholder="E.g.: SN123456789"
+                  placeholder="E.g.: Building A, Floor 3"
                   disabled={loading}
                 />
-                {errors.serialNumber && <span className="error-message">{errors.serialNumber}</span>}
               </div>
 
-              {/* Type */}
+              {/* Capacity */}
               <div className="form-group">
-                <label htmlFor="type">
-                  Type <span className="required">*</span>
-                </label>
-                <select
-                  id="type"
-                  name="type"
-                  value={formData.type}
-                  onChange={handleChange}
-                  className={errors.type ? 'error' : ''}
-                  disabled={loading}
-                >
-                  {EQUIPMENT_TYPE_OPTIONS.map(option => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                {errors.type && <span className="error-message">{errors.type}</span>}
-              </div>
-
-              {/* Image URL */}
-              <div className="form-group">
-                <label htmlFor="imageUrl">
-                  Image URL
+                <label htmlFor="capacity">
+                  Capacity <span className="required">*</span>
                 </label>
                 <input
-                  type="url"
-                  id="imageUrl"
-                  name="imageUrl"
-                  value={formData.imageUrl}
+                  type="number"
+                  id="capacity"
+                  name="capacity"
+                  value={formData.capacity}
                   onChange={handleChange}
-                  placeholder="https://example.com/image.jpg"
+                  className={errors.capacity ? 'error' : ''}
+                  placeholder="E.g.: 30"
+                  min="1"
                   disabled={loading}
                 />
+                {errors.capacity && <span className="error-message">{errors.capacity}</span>}
               </div>
 
-              {/* Room ID */}
+              {/* Room */}
               <div className="form-group">
                 <label htmlFor="roomId">
                   Room
@@ -236,41 +200,28 @@ const EquipmentForm = ({ equipment, onSubmit, onCancel, loading }) => {
                   ))}
                 </select>
                 {errors.roomId && <span className="error-message">{errors.roomId}</span>}
-                <small className="form-hint">Leave empty if not assigned to room</small>
+                <small className="form-hint">Leave empty if not assigned to a specific room</small>
               </div>
 
-              {/* Last Maintenance Date */}
+              {/* Status */}
               <div className="form-group">
-                <label htmlFor="lastMaintenanceDate">
-                  Last Maintenance Date
+                <label htmlFor="status">
+                  Status <span className="required">*</span>
                 </label>
-                <input
-                  type="datetime-local"
-                  id="lastMaintenanceDate"
-                  name="lastMaintenanceDate"
-                  value={formData.lastMaintenanceDate}
+                <select
+                  id="status"
+                  name="status"
+                  value={formData.status}
                   onChange={handleChange}
                   disabled={loading}
-                />
-              </div>
-
-              {/* Next Maintenance Date */}
-              <div className="form-group">
-                <label htmlFor="nextMaintenanceDate">
-                  Next Maintenance Date
-                </label>
-                <input
-                  type="datetime-local"
-                  id="nextMaintenanceDate"
-                  name="nextMaintenanceDate"
-                  value={formData.nextMaintenanceDate}
-                  onChange={handleChange}
-                  disabled={loading}
-                />
+                >
+                  <option value={0}>Active</option>
+                  <option value={1}>Inactive</option>
+                </select>
               </div>
 
               {/* Description */}
-              <div className="form-group">
+              <div className="form-group full-width">
                 <label htmlFor="description">
                   Description
                 </label>
@@ -279,8 +230,8 @@ const EquipmentForm = ({ equipment, onSubmit, onCancel, loading }) => {
                   name="description"
                   value={formData.description}
                   onChange={handleChange}
-                  placeholder="Detailed description of equipment..."
-                  rows="3"
+                  placeholder="Detailed description of the lab..."
+                  rows="4"
                   disabled={loading}
                 />
               </div>
@@ -310,5 +261,5 @@ const EquipmentForm = ({ equipment, onSubmit, onCancel, loading }) => {
   );
 };
 
-export default EquipmentForm;
+export default LabForm;
 

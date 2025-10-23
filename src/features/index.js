@@ -1,4 +1,3 @@
-export { AdminDashboard, AdminDashboardOverview } from './admin';
 export { Login } from './authentication';
 export { default as Home } from './home/Home';
 export { UserList, UserForm, UserStatusForm, userApi } from './user-management';
@@ -22,3 +21,12 @@ export {
   CreateRoom,
   EditRoom
 } from './room-management';
+
+// Event Management
+export {
+  EventList,
+  EventDetail,
+  EventManagement,
+  CreateEvent,
+  EditEvent
+} from './event-management';
