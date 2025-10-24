@@ -5,9 +5,17 @@ import React, { useState } from 'react';
  * Used for updating report status with admin response
  */
 const ReportStatusForm = ({ report, onSubmit, onCancel, loading = false }) => {
+  // Normalize report data to handle both camelCase and PascalCase from backend
+  const normalizedReport = {
+    id: report?.id || report?.Id,
+    title: report?.title || report?.Title,
+    status: report?.status || report?.Status,
+    adminResponse: report?.adminResponse || report?.AdminResponse || ''
+  };
+
   const [formData, setFormData] = useState({
-    status: report?.status || 'Open',
-    adminResponse: report?.adminResponse || ''
+    status: normalizedReport.status || 'Open',
+    adminResponse: normalizedReport.adminResponse
   });
 
   const [errors, setErrors] = useState({});
@@ -84,7 +92,7 @@ const ReportStatusForm = ({ report, onSubmit, onCancel, loading = false }) => {
     <div className="modal-overlay" onClick={onCancel}>
       <div className="modal-content status-update-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3 style={{ marginBottom: '1rem' }}>Update Report Status</h3>
+          <h3>Update Report Status</h3>
         </div>
 
         <form onSubmit={handleSubmit} className="form-content">
@@ -93,17 +101,17 @@ const ReportStatusForm = ({ report, onSubmit, onCancel, loading = false }) => {
             <div className="form-group">
               <label>Report Title</label>
               <div style={{ padding: '8px 0', fontWeight: '500' }}>
-                {report?.title || 'N/A'}
+                {normalizedReport.title || 'N/A'}
               </div>
             </div>
 
             <div className="form-group">
               <label>Current Status</label>
               <div className="current-status">
-                <span 
+                <span
                   className="status-badge"
-                  style={{ 
-                    backgroundColor: getStatusColor(report?.status),
+                  style={{
+                    backgroundColor: getStatusColor(normalizedReport.status),
                     color: 'white',
                     padding: '6px 12px',
                     borderRadius: '6px',
@@ -111,7 +119,7 @@ const ReportStatusForm = ({ report, onSubmit, onCancel, loading = false }) => {
                     fontWeight: '500'
                   }}
                 >
-                  {report?.status || 'Unknown'}
+                  {normalizedReport.status || 'Unknown'}
                 </span>
               </div>
             </div>
@@ -135,7 +143,7 @@ const ReportStatusForm = ({ report, onSubmit, onCancel, loading = false }) => {
               {errors.status && <span className="error-message">{errors.status}</span>}
             </div>
 
-            <div className="form-group">
+            <div className="form-group" style={{ gridColumn: '1 / -1' }}>
               <label htmlFor="adminResponse">
                 Admin Response {(formData.status === 'Resolved' || formData.status === 'Closed') && '*'}
               </label>

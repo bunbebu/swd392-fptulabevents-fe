@@ -2213,6 +2213,10 @@ code {
   width: 90%;
 }
 
+.status-update-modal .modal-header {
+  padding-bottom: 0.5rem;
+}
+
 .status-update-modal .form-content {
   padding: 1.5rem;
 }

@@ -30,3 +30,11 @@ export {
   CreateEvent,
   EditEvent
 } from './event-management';
+
+// Booking Management
+export {
+  BookingList,
+  BookingDetail,
+  CreateBooking,
+  bookingApi
+} from './booking-management';

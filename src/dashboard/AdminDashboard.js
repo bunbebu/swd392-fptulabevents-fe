@@ -9,7 +9,9 @@ import CreateLab from '../features/lab-management/admin/CreateLab';
 import EditLab from '../features/lab-management/admin/EditLab';
 import { EditEvent } from '../features/event-management/admin';
 import { EventList, EventDetail } from '../features/event-management';
+import { BookingList, BookingDetail, CreateBooking } from '../features/booking-management';
 import { NotificationManagement } from '../features/notification-management';
+import { ReportManagement } from '../features/reports-management';
 import { authApi } from '../api';
 
 const AdminDashboard = ({ user: userProp }) => {
@@ -28,6 +30,9 @@ const AdminDashboard = ({ user: userProp }) => {
   const [viewingEventId, setViewingEventId] = useState(null);
   const [editingEventId, setEditingEventId] = useState(null);
   const [eventToast, setEventToast] = useState(null);
+  const [viewingBookingId, setViewingBookingId] = useState(null);
+  const [creatingBooking, setCreatingBooking] = useState(false);
+  const [bookingToast, setBookingToast] = useState(null);
   const userDropdownRef = useRef(null);
 
   // Helper function to generate avatar initials
@@ -222,11 +227,39 @@ const AdminDashboard = ({ user: userProp }) => {
       case 'dashboard':
         return renderDashboard();
       case 'bookings':
+        if (creatingBooking) {
+          return (
+            <div className="admin-content">
+              <CreateBooking
+                onNavigateBack={() => setCreatingBooking(false)}
+                onSuccess={() => {
+                  setCreatingBooking(false);
+                  setBookingToast({ message: 'Booking created successfully!', type: 'success' });
+                }}
+              />
+            </div>
+          );
+        }
+        if (viewingBookingId) {
+          return (
+            <div className="admin-content">
+              <BookingDetail
+                bookingId={viewingBookingId}
+                onNavigateBack={() => setViewingBookingId(null)}
+                userRole="Admin"
+              />
+            </div>
+          );
+        }
         return (
           <div className="admin-content">
-            <h2>Booking Management</h2>
-            <p>Manage and approve lab booking requests</p>
-            {/* TODO: Implement booking management */}
+            <BookingList
+              userRole="Admin"
+              onViewBooking={(bookingId) => setViewingBookingId(bookingId)}
+              onCreateBooking={() => setCreatingBooking(true)}
+              initialToast={bookingToast}
+              onToastShown={() => setBookingToast(null)}
+            />
           </div>
         );
       case 'users':
@@ -393,9 +426,7 @@ const AdminDashboard = ({ user: userProp }) => {
       case 'reports':
         return (
           <div className="admin-content">
-            <h2>Reports & Analytics</h2>
-            <p>Generate usage reports and analytics</p>
-            {/* TODO: Implement reports */}
+            <ReportManagement />
           </div>
         );
       case 'settings':

@@ -1583,6 +1583,7 @@ export const notificationApi = {
 export async function getAllReports(filter = {}) {
   const params = new URLSearchParams();
 
+  if (filter.title) params.append('Title', filter.title);
   if (filter.type) params.append('Type', filter.type);
   if (filter.status) params.append('Status', filter.status);
   if (filter.startDate) params.append('StartDate', filter.startDate);
@@ -1610,13 +1611,26 @@ export async function getReportByIdAdmin(id) {
  * Update report status (Admin only)
  * PUT /api/reports/admin/{id}/status
  * @param {string} id - Report UUID
- * @param {string} status - New status
+ * @param {string} status - New status (Open, InProgress, Resolved, Closed)
  * @param {string} adminResponse - Admin response message
  * @returns {Promise<Object>} Updated report
  */
 export async function updateReportStatus(id, status, adminResponse = '') {
+  // Map status string to enum number
+  const statusMap = {
+    'Open': 0,
+    'InProgress': 1,
+    'Resolved': 2,
+    'Closed': 3
+  };
+
+  // Convert string status to number if it's a string
+  const statusValue = typeof status === 'string' 
+    ? statusMap[status] 
+    : status;
+
   const payload = {
-    Status: status,
+    Status: statusValue,
     AdminResponse: adminResponse
   };
 
@@ -1644,6 +1658,7 @@ export async function getPendingReportsCount() {
 export async function getUserReports(filter = {}) {
   const params = new URLSearchParams();
 
+  if (filter.title) params.append('Title', filter.title);
   if (filter.type) params.append('Type', filter.type);
   if (filter.status) params.append('Status', filter.status);
   if (filter.startDate) params.append('StartDate', filter.startDate);

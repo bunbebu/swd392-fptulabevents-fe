@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import { reportsApi } from '../../../api';
 import UserReportForm from './UserReportForm';
 import ReportList from '../components/ReportList';
@@ -12,11 +12,6 @@ import ReportList from '../components/ReportList';
  * - US-XX: User - Create and manage reports
  */
 const UserReports = () => {
-  const [reports, setReports] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [stats, setStats] = useState({ total: 0 });
-  
   // Modal states
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -24,38 +19,13 @@ const UserReports = () => {
   const [confirmDeleteReport, setConfirmDeleteReport] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [toast, setToast] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
     window.clearTimeout(showToast._tid);
     showToast._tid = window.setTimeout(() => setToast(null), 3000);
   };
-
-  // Load report data
-  const loadReports = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const [reportList, totalCount] = await Promise.all([
-        reportsApi.getUserReports(),
-        reportsApi.getUserReportsCount()
-      ]);
-
-      setReports(Array.isArray(reportList) ? reportList : []);
-      setStats({ total: totalCount || 0 });
-    } catch (err) {
-      console.error('Error loading reports:', err);
-      setError(err.message || 'Unable to load report list');
-      setReports([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadReports();
-  }, [loadReports]);
 
   // Handle create report
   const handleCreate = async (reportData) => {
@@ -64,7 +34,8 @@ const UserReports = () => {
       await reportsApi.createReport(reportData);
       showToast('Report created successfully!', 'success');
       setShowCreateModal(false);
-      await loadReports();
+      // Trigger ReportList refresh
+      setRefreshKey(prev => prev + 1);
     } catch (err) {
       showToast(err.message || 'Unable to create report', 'error');
       throw err;
@@ -81,7 +52,8 @@ const UserReports = () => {
       showToast('Report updated successfully!', 'success');
       setShowEditModal(false);
       setSelectedReport(null);
-      await loadReports();
+      // Trigger ReportList refresh
+      setRefreshKey(prev => prev + 1);
     } catch (err) {
       showToast(err.message || 'Unable to update report', 'error');
       throw err;
@@ -97,38 +69,14 @@ const UserReports = () => {
       await reportsApi.deleteReport(reportId);
       showToast('Report deleted successfully!', 'success');
       setConfirmDeleteReport(null);
-      await loadReports();
+      // Trigger ReportList refresh
+      setRefreshKey(prev => prev + 1);
     } catch (err) {
       showToast(err.message || 'Unable to delete report', 'error');
     } finally {
       setActionLoading(false);
     }
   };
-
-  if (loading) {
-    return (
-      <div className="admin-content">
-        <div className="loading-container">
-          <div className="loading-spinner"></div>
-          <p>Loading your reports...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="admin-content">
-        <div className="error-container">
-          <h3>Error</h3>
-          <p>{error}</p>
-          <button className="btn-primary" onClick={loadReports}>
-            Try Again
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="admin-content">
@@ -157,29 +105,9 @@ const UserReports = () => {
         </button>
       </div>
 
-      {/* Statistics Cards */}
-      <div className="stats-grid" style={{ marginBottom: '24px' }}>
-        <div className="stat-card">
-          <div className="stat-card-content">
-            <div className="stat-info">
-              <h3>Total Reports</h3>
-              <p className="stat-number">{stats.total}</p>
-            </div>
-            <div className="stat-icon blue">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                <polyline points="14 2 14 8 20 8"></polyline>
-                <line x1="16" y1="13" x2="8" y2="13"></line>
-                <line x1="16" y1="17" x2="8" y2="17"></line>
-                <polyline points="10 9 9 9 8 9"></polyline>
-              </svg>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Report List */}
       <ReportList 
+        key={refreshKey}
         userRole="Student" 
         isAdmin={false}
       />

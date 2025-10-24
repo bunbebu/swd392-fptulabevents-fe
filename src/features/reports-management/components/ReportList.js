@@ -12,9 +12,11 @@ import ReportDetail from './ReportDetail';
  * - US-XX: User - Manage reports
  * - US-XX: Admin - Manage all reports
  */
-const ReportList = ({ userRole = 'Student', isAdmin = false, onSelectReport, onViewReport }) => {
-  const [reports, setReports] = useState([]);
+const ReportList = ({ isAdmin = false, onSelectReport, onViewReport, externalToast = null }) => {
+  const [allReports, setAllReports] = useState([]); // Store all reports for client-side pagination
+  const [reports, setReports] = useState([]); // Current page reports
   const [loading, setLoading] = useState(true);
+  const [paginationLoading, setPaginationLoading] = useState(false);
   const [error, setError] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(10);
@@ -24,14 +26,18 @@ const ReportList = ({ userRole = 'Student', isAdmin = false, onSelectReport, onV
   const [selectedReportId, setSelectedReportId] = useState(null);
   const [showDetailPage, setShowDetailPage] = useState(false);
 
-  // Filter states
-  const [apiFilters, setApiFilters] = useState({
+  // Filter states - separate local filters from applied filters
+  const [localFilters, setLocalFilters] = useState({
+    title: '',
     type: '',
-    status: '',
-    startDate: '',
-    endDate: '',
-    page: 1,
-    pageSize: 10
+    status: ''
+  });
+  
+  const [appliedFilters, setAppliedFilters] = useState({
+    title: '',
+    type: '',
+    status: ''
+    // Don't include page/pageSize here for client-side pagination
   });
 
   const showToast = (message, type = 'success') => {
@@ -40,21 +46,21 @@ const ReportList = ({ userRole = 'Student', isAdmin = false, onSelectReport, onV
     showToast._tid = window.setTimeout(() => setToast(null), 3000);
   };
 
-  // Load report data with pagination
-  const loadReports = useCallback(async (page = currentPage) => {
+  // Load ALL reports (client-side pagination)
+  const loadReports = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
+      // Fetch ALL reports without pagination (backend doesn't support TotalCount)
       const filters = {
-        ...apiFilters,
-        page: page - 1, // Backend uses 0-based pagination
-        pageSize: pageSize
+        ...appliedFilters
+        // Don't send page/pageSize to get all records
       };
 
       // Clean up empty filters
       const cleanFilters = Object.fromEntries(
-        Object.entries(filters).filter(([key, value]) =>
+        Object.entries(filters).filter(([, value]) =>
           value !== '' && value !== null && value !== undefined
         )
       );
@@ -63,68 +69,146 @@ const ReportList = ({ userRole = 'Student', isAdmin = false, onSelectReport, onV
         ? await reportsApi.getAllReports(cleanFilters)
         : await reportsApi.getUserReports(cleanFilters);
 
-      setReports(Array.isArray(reportList) ? reportList : []);
-      
-      // Calculate pagination
-      const total = reportList.length;
-      setTotalReports(total);
-      setTotalPages(Math.ceil(total / pageSize));
+      console.log('=== loadReports response ===');
+      console.log('Response:', reportList);
+      console.log('Is Array?', Array.isArray(reportList));
+
+      // Handle response - backend returns { Data: [...], Code: 200, Message: "OK" }
+      let reportData = [];
+
+      if (Array.isArray(reportList)) {
+        reportData = reportList;
+        console.log('Using direct array');
+      } else if (reportList?.Data && Array.isArray(reportList.Data)) {
+        // PascalCase response (C# backend style)
+        reportData = reportList.Data;
+        console.log('Using reportList.Data');
+      } else if (reportList?.data && Array.isArray(reportList.data)) {
+        // camelCase response
+        reportData = reportList.data;
+        console.log('Using reportList.data');
+      }
+
+      console.log('Total reports loaded:', reportData.length);
+      console.log('Page size:', pageSize);
+      console.log('Calculated total pages:', Math.ceil(reportData.length / pageSize));
+
+      // Store all reports for client-side pagination
+      setAllReports(reportData);
+      setTotalReports(reportData.length);
+      const calculatedTotalPages = Math.max(1, Math.ceil(reportData.length / pageSize));
+      setTotalPages(calculatedTotalPages);
+
+      console.log('State will be set to:');
+      console.log('  allReports:', reportData.length, 'items');
+      console.log('  totalReports:', reportData.length);
+      console.log('  totalPages:', calculatedTotalPages);
+
+      // Set current page to 1 and show first page
+      setCurrentPage(1);
+      const startIndex = 0;
+      const endIndex = pageSize;
+      const firstPageReports = reportData.slice(startIndex, endIndex);
+      console.log('First page reports:', firstPageReports.length, 'items');
+      setReports(firstPageReports);
     } catch (err) {
       console.error('Error loading reports:', err);
       setError(err.message || 'Unable to load report list');
+      setAllReports([]);
       setReports([]);
+      setTotalReports(0);
+      setTotalPages(1);
     } finally {
       setLoading(false);
     }
-  }, [apiFilters, currentPage, pageSize, isAdmin]);
+  }, [appliedFilters, pageSize, isAdmin]);
 
+  // Initial load and when filters change
   useEffect(() => {
     loadReports();
   }, [loadReports]);
 
-  // Pagination handler
+  // Client-side pagination handler
   const handlePageChange = (newPage) => {
-    if (newPage >= 1 && newPage <= totalPages) {
-      setCurrentPage(newPage);
-      loadReports(newPage);
+    console.log('=== handlePageChange called ===');
+    console.log('newPage:', newPage);
+    console.log('currentPage:', currentPage);
+    console.log('totalPages:', totalPages);
+    console.log('totalReports:', totalReports);
+    console.log('allReports.length:', allReports.length);
+    console.log('Check conditions:');
+    console.log('  newPage >= 1:', newPage >= 1);
+    console.log('  newPage <= totalPages:', newPage <= totalPages);
+    console.log('  newPage !== currentPage:', newPage !== currentPage);
+
+    if (newPage >= 1 && newPage <= totalPages && newPage !== currentPage) {
+      console.log('✓ Pagination allowed, changing page...');
+      setPaginationLoading(true);
+
+      // Simulate a small delay for better UX
+      setTimeout(() => {
+        setCurrentPage(newPage);
+
+        // Calculate slice indices for client-side pagination
+        const startIndex = (newPage - 1) * pageSize;
+        const endIndex = startIndex + pageSize;
+
+        const pageReports = allReports.slice(startIndex, endIndex);
+        console.log('Showing reports from index', startIndex, 'to', endIndex);
+        console.log('Page reports count:', pageReports.length);
+
+        setReports(pageReports);
+        setPaginationLoading(false);
+      }, 200);
+    } else {
+      console.log('✗ Pagination blocked!');
     }
   };
 
   // View report details
   const handleViewReport = (reportId) => {
-    setSelectedReportId(reportId);
-    setShowDetailPage(true);
+    if (onViewReport) {
+      onViewReport(reportId);
+    } else {
+      setSelectedReportId(reportId);
+      setShowDetailPage(true);
+    }
   };
 
   // Apply filters
   const applyFilters = () => {
+    setAppliedFilters({
+      ...localFilters
+      // Don't include page/pageSize for client-side pagination
+    });
     setCurrentPage(1);
-    loadReports(1);
   };
 
   // Clear filters
   const clearFilters = () => {
-    setApiFilters({
+    const emptyFilters = {
+      title: '',
       type: '',
-      status: '',
-      startDate: '',
-      endDate: '',
-      page: 1,
-      pageSize: 10
-    });
+      status: ''
+    };
+    setLocalFilters(emptyFilters);
+    setAppliedFilters(emptyFilters); // Don't include page/pageSize
     setCurrentPage(1);
   };
 
   // Get status badge class
   const getStatusBadgeClass = (status) => {
     switch (status?.toString()) {
+      case '0':
       case 'Open':
-      case 'Pending':
-        return 'status-badge status-pending';
+        return 'status-badge status-open';
+      case '1':
       case 'InProgress':
-        return 'status-badge status-in-progress';
+        return 'status-badge status-inprogress';
+      case '2':
       case 'Resolved':
         return 'status-badge status-resolved';
+      case '3':
       case 'Closed':
         return 'status-badge status-closed';
       default:
@@ -132,16 +216,23 @@ const ReportList = ({ userRole = 'Student', isAdmin = false, onSelectReport, onV
     }
   };
 
-  // Get type badge class
-  const getTypeBadgeClass = (type) => {
+  // Get status display text
+  const getStatusText = (status) => {
+    switch (status?.toString()) {
+      case '0': return 'OPEN';
+      case '1': return 'INPROGRESS';
+      case '2': return 'RESOLVED';
+      case '3': return 'CLOSED';
+      default: return status || 'Unknown';
+    }
+  };
+
+  // Get type display text
+  const getTypeText = (type) => {
     switch (type?.toString()) {
-      case 'Lab':
-      case 'Room':
-        return 'type-badge type-lab';
-      case 'Equipment':
-        return 'type-badge type-equipment';
-      default:
-        return 'type-badge';
+      case '0': return 'Lab';
+      case '1': return 'Equipment';
+      default: return type || 'Unknown';
     }
   };
 
@@ -164,7 +255,7 @@ const ReportList = ({ userRole = 'Student', isAdmin = false, onSelectReport, onV
         onNavigateBack={() => {
           setShowDetailPage(false);
           setSelectedReportId(null);
-          loadReports(currentPage);
+          loadReports(); // Reload all reports
         }}
       />
     );
@@ -184,156 +275,295 @@ const ReportList = ({ userRole = 'Student', isAdmin = false, onSelectReport, onV
   return (
     <div className="room-list-container">
       <div className="room-list-header">
-        <h2>{isAdmin ? 'All Reports' : 'My Reports'}</h2>
+        <h2>{isAdmin ? 'Reports Management' : 'My Reports'}</h2>
       </div>
 
       {/* Success/Error Notification */}
-      {toast && (
+      {(externalToast || toast) && (
         <div
           className="table-notification"
           style={{
-            backgroundColor: toast.type === 'success' ? '#d1fae5' : '#fee2e2',
-            color: toast.type === 'success' ? '#065f46' : '#dc2626',
-            border: toast.type === 'success' ? '1px solid #a7f3d0' : '1px solid #fecaca',
+            backgroundColor: (externalToast || toast).type === 'success' ? '#d1fae5' : '#fee2e2',
+            color: (externalToast || toast).type === 'success' ? '#065f46' : '#dc2626',
+            border: (externalToast || toast).type === 'success' ? '1px solid #a7f3d0' : '1px solid #fecaca',
             padding: '12px 16px',
             borderRadius: '8px',
             marginBottom: '20px',
             fontSize: '14px',
-            fontWeight: '500'
+            fontWeight: '500',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
           }}
         >
-          {toast.message}
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            {(externalToast || toast).type === 'success' ? (
+              <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            ) : (
+              <path d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            )}
+          </svg>
+          {(externalToast || toast).message}
         </div>
       )}
 
-      {/* Filters */}
-      <div className="filters-section" style={{ marginBottom: '20px' }}>
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          <select
-            value={apiFilters.type}
-            onChange={(e) => setApiFilters({ ...apiFilters, type: e.target.value })}
-            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd' }}
-          >
-            <option value="">All Types</option>
-            <option value="Lab">Lab</option>
-            <option value="Equipment">Equipment</option>
-          </select>
+      {error && (
+        <div className="error-message">
+          {error}
+          <div className="error-actions">
+            <button onClick={() => loadReports()} className="btn btn-secondary">
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
 
-          <select
-            value={apiFilters.status}
-            onChange={(e) => setApiFilters({ ...apiFilters, status: e.target.value })}
-            style={{ padding: '8px', borderRadius: '4px', border: '1px solid #ddd' }}
-          >
-            <option value="">All Status</option>
-            <option value="Open">Open</option>
-            <option value="InProgress">In Progress</option>
-            <option value="Resolved">Resolved</option>
-            <option value="Closed">Closed</option>
-          </select>
+      <div className="room-list-stats">
+        <span>Total reports: {totalReports}</span>
+        <span>Page {currentPage} / {totalPages}</span>
+        <span style={{ marginLeft: '10px', fontSize: '12px', color: '#666' }}>
+          (All: {allReports.length}, Showing: {reports.length})
+        </span>
+      </div>
 
-          <button onClick={applyFilters} className="btn-primary" style={{ padding: '8px 16px' }}>
-            Apply Filters
-          </button>
-          <button onClick={clearFilters} className="btn-secondary" style={{ padding: '8px 16px' }}>
-            Clear Filters
-          </button>
+      {/* Filter Controls */}
+      <div className="filter-controls">
+        <div className="filter-row">
+          <div className="search-bar">
+            <svg className="search-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <path d="m21 21-4.35-4.35"></path>
+            </svg>
+            <input
+              type="text"
+              placeholder="Search by title..."
+              value={localFilters.title || ''}
+              onChange={(e) => {
+                const value = e.target.value;
+                setLocalFilters(prev => ({ ...prev, title: value }));
+              }}
+              className="search-input"
+            />
+            {localFilters.title && (
+              <button
+                className="clear-search"
+                onClick={() => setLocalFilters(prev => ({ ...prev, title: '' }))}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 6L6 18"></path>
+                  <path d="M6 6l12 12"></path>
+                </svg>
+              </button>
+            )}
+          </div>
+
+          <div className="filter-group">
+            <select
+              value={localFilters.type}
+              onChange={(e) => setLocalFilters(prev => ({ ...prev, type: e.target.value }))}
+              className="filter-select"
+            >
+              <option value="">All Types</option>
+              <option value="0">Lab</option>
+              <option value="1">Equipment</option>
+            </select>
+            <select
+              value={localFilters.status}
+              onChange={(e) => setLocalFilters(prev => ({ ...prev, status: e.target.value }))}
+              className="filter-select"
+            >
+              <option value="">All Status</option>
+              <option value="0">Open</option>
+              <option value="1">In Progress</option>
+              <option value="2">Resolved</option>
+              <option value="3">Closed</option>
+            </select>
+          </div>
+
+          <div className="filter-actions">
+            <button
+              className="btn btn-primary"
+              onClick={applyFilters}
+            >
+              Apply Filters
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={clearFilters}
+            >
+              Clear Filters
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Reports Table */}
-      {error ? (
-        <div className="error-message" style={{ padding: '20px', textAlign: 'center', color: '#dc2626' }}>
-          {error}
-        </div>
-      ) : reports.length === 0 ? (
-        <div className="no-data" style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>
-          No reports found
-        </div>
-      ) : (
-        <>
-          <div className="table-container">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Title</th>
-                  <th>Type</th>
-                  <th>Status</th>
-                  {isAdmin && <th>Reporter</th>}
-                  <th>Reported Date</th>
-                  <th>Resolved Date</th>
-                  <th>Actions</th>
+      <div className="room-table-container">
+        <table className="room-table">
+          <thead>
+            <tr>
+              <th className="col-name">Title</th>
+              <th>Type</th>
+              <th>Status</th>
+              {isAdmin && <th>Reporter</th>}
+              <th>Reported Date</th>
+              <th>Resolved Date</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && !paginationLoading ? (
+              <tr>
+                <td colSpan={isAdmin ? "7" : "6"} className="loading-cell">
+                  <div className="loading-spinner"></div>
+                  Loading reports...
+                </td>
+              </tr>
+            ) : paginationLoading ? (
+              // Show skeleton rows during pagination
+              Array.from({ length: pageSize }).map((_, index) => (
+                <tr key={`skeleton-${index}`} className="skeleton-row">
+                  <td><div className="skeleton-text"></div></td>
+                  <td><div className="skeleton-text"></div></td>
+                  <td><div className="skeleton-text"></div></td>
+                  {isAdmin && <td><div className="skeleton-text"></div></td>}
+                  <td><div className="skeleton-text"></div></td>
+                  <td><div className="skeleton-text"></div></td>
+                  <td><div className="skeleton-text"></div></td>
                 </tr>
-              </thead>
-              <tbody>
-                {reports.map((report) => (
-                  <tr key={report.id}>
-                    <td>
+              ))
+            ) : reports.length === 0 ? (
+              <tr>
+                <td colSpan={isAdmin ? "7" : "6"} className="no-data">
+                  No report data
+                </td>
+              </tr>
+            ) : (
+              reports.map((report) => (
+                <tr key={report.id}>
+                  <td className="col-name">
+                    <div>
                       <strong>{report.title}</strong>
                       {report.description && (
-                        <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
-                          {report.description.substring(0, 60)}
-                          {report.description.length > 60 ? '...' : ''}
+                        <div className="text-muted small">
+                          {report.description.substring(0, 100)}
+                          {report.description.length > 100 ? '...' : ''}
                         </div>
                       )}
-                    </td>
-                    <td>
-                      <span className={getTypeBadgeClass(report.type)}>
-                        {report.type}
-                      </span>
-                    </td>
-                    <td>
-                      <span className={getStatusBadgeClass(report.status)}>
-                        {report.status}
-                      </span>
-                    </td>
-                    {isAdmin && <td>{report.reporterName}</td>}
-                    <td>{formatDate(report.reportedDate)}</td>
-                    <td>{formatDate(report.resolvedAt)}</td>
-                    <td>
+                    </div>
+                  </td>
+                  <td>
+                    <span className="type-badge">
+                      {getTypeText(report.type)}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={getStatusBadgeClass(report.status)}>
+                      {getStatusText(report.status)}
+                    </span>
+                  </td>
+                  {isAdmin && <td>{report.reporterName || 'Admin'}</td>}
+                  <td>{formatDate(report.reportedDate)}</td>
+                  <td>{formatDate(report.resolvedAt)}</td>
+                  <td>
+                    <div className="action-buttons">
                       <button
-                        className="btn-icon"
+                        className="btn btn-sm btn-icon btn-icon-outline color-yellow"
                         onClick={() => handleViewReport(report.id)}
-                        title="View Details"
+                        aria-label="View details"
+                        title="View"
                       >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                          <circle cx="12" cy="12" r="3"></circle>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/>
+                          <circle cx="12" cy="12" r="3"/>
                         </svg>
                       </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      {isAdmin && onSelectReport && (
+                        <button
+                          className="btn btn-sm btn-icon btn-icon-outline color-blue"
+                          onClick={() => onSelectReport(report)}
+                          aria-label="Update status"
+                          title="Update Status"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 20h9"/>
+                            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="pagination" style={{ marginTop: '20px', display: 'flex', justifyContent: 'center', gap: '8px' }}>
-              <button
-                onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage === 1}
-                className="btn-secondary"
-              >
-                Previous
-              </button>
-              <span style={{ padding: '8px 16px' }}>
-                Page {currentPage} of {totalPages}
-              </span>
-              <button
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage === totalPages}
-                className="btn-secondary"
-              >
-                Next
-              </button>
-            </div>
+      {/* Pagination */}
+      <div className="pagination">
+        <button
+          className="btn btn-secondary"
+          onClick={() => {
+            console.log('Previous button clicked');
+            handlePageChange(currentPage - 1);
+          }}
+          disabled={currentPage === 1 || paginationLoading}
+          title={`Previous (disabled: ${currentPage === 1 || paginationLoading})`}
+        >
+          {paginationLoading && currentPage > 1 ? (
+            <>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="spinning">
+                <path d="M21 12a9 9 0 11-6.219-8.56"/>
+              </svg>
+              Loading...
+            </>
+          ) : (
+            'Previous'
           )}
-        </>
-      )}
+        </button>
+        <span className="page-info">
+          Page {currentPage} / {totalPages}
+          {paginationLoading && (
+            <span className="pagination-loading-indicator">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="spinning">
+                <path d="M21 12a9 9 0 11-6.219-8.56"/>
+              </svg>
+            </span>
+          )}
+        </span>
+        <button
+          className="btn btn-secondary"
+          onClick={() => {
+            console.log('Next button clicked');
+            handlePageChange(currentPage + 1);
+          }}
+          disabled={currentPage === totalPages || paginationLoading}
+          title={`Next (disabled: ${currentPage === totalPages || paginationLoading}, currentPage=${currentPage}, totalPages=${totalPages})`}
+        >
+          {paginationLoading && currentPage < totalPages ? (
+            <>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="spinning">
+                <path d="M21 12a9 9 0 11-6.219-8.56"/>
+              </svg>
+              Loading...
+            </>
+          ) : (
+            'Next'
+          )}
+        </button>
+      </div>
     </div>
   );
 };
 
 export default ReportList;
-

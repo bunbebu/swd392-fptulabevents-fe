@@ -1,13 +1,12 @@
 // Admin components
-export { ReportManagement, ReportStatusForm } from './admin';
+export { default as ReportManagement } from './admin/ReportManagement';
+export { default as ReportStatusForm } from './admin/ReportStatusForm';
 
 // User components
-export { UserReports, UserReportForm } from './user';
+export { default as UserReports } from './user/UserReports';
+export { default as UserReportForm } from './user/UserReportForm';
 
 // Common components
-export { ReportDetail, ReportList } from './components';
-
-// Default exports for convenience
-export { default as ReportManagement } from './admin/ReportManagement';
-export { default as UserReports } from './user/UserReports';
+export { default as ReportDetail } from './components/ReportDetail';
+export { default as ReportList } from './components/ReportList';
 
