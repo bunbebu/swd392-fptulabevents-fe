@@ -27,6 +27,14 @@ function setTokens({ accessToken, refreshToken }) {
   if (refreshToken) storage.setItem('refreshToken', refreshToken);
 }
 
+function clearTokens() {
+  // Clear tokens from both localStorage and sessionStorage
+  localStorage.removeItem('accessToken');
+  localStorage.removeItem('refreshToken');
+  sessionStorage.removeItem('accessToken');
+  sessionStorage.removeItem('refreshToken');
+}
+
 // Helper function to get auth headers
 function getAuthHeaders() {
   const token = getAuthToken();
@@ -95,7 +103,16 @@ async function request(path, options) {
   }
 
   // Normalize successful response shape: unwrap { data/code/message } or { Data/Code/Message }
-  return (data && (data.Data ?? data.data)) || data;
+  const result = (data && (data.Data ?? data.data)) || data;
+  
+  // Debug logging for events API
+  if (path.includes('/events/upcoming')) {
+    console.log('API Debug - Path:', path);
+    console.log('API Debug - Raw response:', data);
+    console.log('API Debug - Normalized result:', result);
+  }
+  
+  return result;
 }
 
 // ============================================================================
@@ -117,17 +134,68 @@ export async function login({ identifier, password }) {
 
 export async function refreshAuthToken() {
   const refreshToken = getRefreshToken();
-  if (!refreshToken) return null;
-  const data = await fetch(`${API_BASE}/api/auth/refresh`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refreshToken })
-  }).then(r => r.json()).catch(() => null);
-  if (!data) return null;
-  const accessToken = data.AccessToken || data.accessToken;
-  const newRefresh = data.RefreshToken || data.refreshToken || refreshToken;
-  if (accessToken) setTokens({ accessToken, refreshToken: newRefresh });
-  return { accessToken, refreshToken: newRefresh };
+  if (!refreshToken) {
+    console.log('No refresh token found');
+    return null;
+  }
+  
+  try {
+    console.log('Attempting to refresh token...');
+    const resp = await fetch(`${API_BASE}/api/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ RefreshToken: refreshToken })
+    });
+    
+    console.log('Refresh token response status:', resp.status);
+    
+    if (!resp.ok) {
+      const errorText = await resp.text().catch(() => '');
+      console.log('Refresh token failed with status:', resp.status, 'Error:', errorText);
+      
+      // If refresh token is invalid, clear tokens and redirect to login
+      if (resp.status === 401) {
+        console.log('Refresh token is invalid, clearing tokens...');
+        clearTokens();
+        // Redirect to login after a short delay to allow any ongoing operations to complete
+        setTimeout(() => {
+          if (window.location.pathname !== '/login') {
+            window.location.href = '/login';
+          }
+        }, 1000);
+      }
+      
+      return null;
+    }
+    
+    const text = await resp.text().catch(() => '');
+    console.log('Refresh token raw response:', text);
+    
+    let data;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      data = { raw: text };
+    }
+    
+    console.log('Parsed response:', data);
+    
+    // Normalize response like request function does
+    const normalizedData = (data && (data.Data ?? data.data)) || data;
+    
+    console.log('Normalized data:', normalizedData);
+    
+    const accessToken = normalizedData.AccessToken || normalizedData.accessToken;
+    const newRefresh = normalizedData.RefreshToken || normalizedData.refreshToken || refreshToken;
+    
+    console.log('Extracted tokens:', { accessToken: !!accessToken, newRefresh: !!newRefresh });
+    
+    if (accessToken) setTokens({ accessToken, refreshToken: newRefresh });
+    return { accessToken, refreshToken: newRefresh };
+  } catch (error) {
+    console.log('Refresh token failed:', error);
+    return null;
+  }
 }
 
 async function tryRefreshToken() {
@@ -1771,7 +1839,7 @@ export const reportsApi = {
  * @param {number} filters.status - Status filter (0: Pending, 1: Approved, 2: Rejected, 3: Cancelled)
  * @param {string} filters.from - Start date filter (ISO string)
  * @param {string} filters.to - End date filter (ISO string)
- * @param {number} filters.page - Page number (0-based for backend)
+ * @param {number} filters.page - Page number (1-based in frontend, converted to 0-based for backend)
  * @param {number} filters.pageSize - Items per page
  * @returns {Promise<Array>} List of bookings
  */
@@ -1783,11 +1851,15 @@ export async function getBookings(filters = {}) {
   if (filters.status !== undefined) params.append('Status', String(filters.status));
   if (filters.from) params.append('From', filters.from);
   if (filters.to) params.append('To', filters.to);
-  if (filters.page !== undefined) params.append('Page', String(filters.page));
+  // Backend expects 0-based page index, but frontend uses 1-based
+  if (filters.page !== undefined) params.append('Page', String(filters.page - 1));
   if (filters.pageSize) params.append('PageSize', String(filters.pageSize));
 
   const queryString = params.toString();
   const url = queryString ? `/api/bookings?${queryString}` : '/api/bookings';
+
+  console.log('[Booking API] Request URL:', url);
+  console.log('[Booking API] Filters:', filters);
 
   return await request(url, { method: 'GET' });
 }
@@ -1834,16 +1906,21 @@ export async function createBooking(bookingData) {
  * Update booking status
  * PATCH /api/bookings/{id}/status
  * @param {string} id - Booking UUID
- * @param {Object} statusData - Status update data
- * @param {number} statusData.status - New status (0: Pending, 1: Approved, 2: Rejected, 3: Cancelled)
- * @param {string} statusData.notes - Optional notes about status change
+ * @param {number} status - New status (0: Pending, 1: Approved, 2: Rejected, 3: Cancelled, 4: Completed)
+ * @param {string} notes - Optional notes about status change
  * @returns {Promise<Object>} Updated booking data
  */
-export async function updateBookingStatus(id, statusData) {
+export async function updateBookingStatus(id, status, notes = '') {
   const payload = {
-    Status: statusData.status,
-    Notes: statusData.notes || null
+    Status: status
   };
+
+  // Only add Notes if it's not empty
+  if (notes && notes.trim()) {
+    payload.Notes = notes;
+  }
+
+  console.log('updateBookingStatus - Sending payload:', payload);
 
   return await request(`/api/bookings/${id}/status`, {
     method: 'PATCH',

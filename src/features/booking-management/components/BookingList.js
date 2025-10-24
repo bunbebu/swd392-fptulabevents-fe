@@ -1,83 +1,73 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { bookingApi, roomsApi } from '../../../api';
-import { 
-  BOOKING_STATUS, 
-  BOOKING_STATUS_OPTIONS, 
-  getBookingStatusLabel, 
-  formatBookingDate,
-  canApproveBooking,
-  canRejectBooking,
-  canDeleteBooking,
-  getBookingDuration
-} from '../../../constants/bookingConstants';
+import { bookingApi, authApi } from '../../../api';
+import BookingStatusForm from '../admin/BookingStatusForm';
 
 /**
- * Booking List Component - Admin
- * 
- * Admin can:
- * - View all bookings with filters
- * - Approve/Reject pending bookings
- * - Bulk approve bookings
- * - Delete bookings
- * - View booking details
- * 
+ * Booking List Component - Common for both Admin and Users
+ *
+ * For Admin: Full booking management with view/create/delete actions
+ * For Users: View own bookings
+ *
  * Related User Stories:
- * - US-24: Admin - Bulk approve multiple bookings
- * - US-28: Admin - Manually mark attendance for users
- * 
+ * - US-XX: Admin - Manage bookings
+ * - US-XX: User - View bookings
+ *
  * Related Use Cases:
- * - UC-04: Approve/Reject Booking
+ * - UC-XX: Manage Bookings (Admin)
+ * - UC-XX: View Bookings (All Users)
  */
-const BookingList = ({ userRole = 'Student', onViewBooking, onCreateBooking, initialToast, onToastShown }) => {
+const BookingList = ({
+  userRole = 'Student',
+  onViewBooking,
+  onCreateBooking,
+  initialToast,
+  onToastShown
+}) => {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [paginationLoading, setPaginationLoading] = useState(false);
   const [error, setError] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize] = useState(10);
+  const [pageSize] = useState(8);
   const [totalPages, setTotalPages] = useState(1);
   const [totalBookings, setTotalBookings] = useState(0);
+  // eslint-disable-next-line no-unused-vars
+  const [stats, setStats] = useState({ total: 0, approved: 0 });
   const [toast, setToast] = useState(null);
-  const [rooms, setRooms] = useState([]);
-
-  // Show initial toast passed from parent once on mount
-  useEffect(() => {
-    if (initialToast) {
-      setToast(initialToast);
-      window.clearTimeout(BookingList._tid);
-      BookingList._tid = window.setTimeout(() => {
-        setToast(null);
-        if (onToastShown) onToastShown();
-      }, 3000);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialToast]);
-  
-  // Modal states
-  const [showApproveModal, setShowApproveModal] = useState(false);
-  const [showRejectModal, setShowRejectModal] = useState(false);
-  const [selectedBooking, setSelectedBooking] = useState(null);
-  const [actionLoading, setActionLoading] = useState(false);
   const [confirmDeleteBooking, setConfirmDeleteBooking] = useState(null);
-  const [rejectNotes, setRejectNotes] = useState('');
-  const [approveNotes, setApproveNotes] = useState('');
-  
-  // Bulk selection
-  const [selectedBookings, setSelectedBookings] = useState([]);
-  const [showBulkApproveModal, setShowBulkApproveModal] = useState(false);
-  
-  // API filter states
+  const [actionLoading, setActionLoading] = useState(false);
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [selectedBooking, setSelectedBooking] = useState(null);
+
+  // API filter states (excluding page/pageSize - those are managed separately)
   const [apiFilters, setApiFilters] = useState({
-    roomId: '',
+    roomId: '', // Backend uses roomId for lab filtering
     userId: '',
     status: '',
-    from: '',
-    to: '',
-    page: 1,
-    pageSize: 10
+    from: '', // Backend uses from/to for date filtering
+    to: ''
   });
 
   const isAdmin = userRole === 'Admin';
+
+  // Helper function to normalize booking data
+  const normalizeBooking = (booking) => {
+    return {
+      ...booking,
+      id: booking.id || booking.Id,
+      roomId: booking.roomId || booking.RoomId,
+      userId: booking.userId || booking.UserId,
+      startTime: booking.startTime || booking.StartTime,
+      endTime: booking.endTime || booking.EndTime,
+      status: booking.status !== undefined ? booking.status : booking.Status,
+      createdAt: booking.createdAt || booking.CreatedAt,
+      // Backend returns RoomName and UserName in list
+      roomName: booking.roomName || booking.RoomName || 'Unknown Room',
+      userName: booking.userName || booking.UserName || 'Unknown User',
+      // Purpose is only in BookingDetail, not in list
+      purpose: booking.purpose || booking.Purpose || null
+    };
+  };
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
@@ -85,22 +75,20 @@ const BookingList = ({ userRole = 'Student', onViewBooking, onCreateBooking, ini
     showToast._tid = window.setTimeout(() => setToast(null), 3000);
   };
 
-  // Load rooms for filter
+  // Show initial toast if provided
   useEffect(() => {
-    const loadRooms = async () => {
-      try {
-        const roomsData = await roomsApi.getRooms();
-        setRooms(roomsData || []);
-      } catch (err) {
-        console.error('Failed to load rooms:', err);
+    if (initialToast) {
+      showToast(initialToast.message, initialToast.type);
+      if (onToastShown) {
+        onToastShown();
       }
-    };
-    loadRooms();
-  }, []);
+    }
+  }, [initialToast, onToastShown]);
 
   // Load booking data with pagination
-  const loadBookings = useCallback(async (page = currentPage, isPagination = false) => {
+  const loadBookings = useCallback(async (page = 1, isPagination = false) => {
     try {
+      // Only show main loading on initial load, not on pagination
       if (isPagination) {
         setPaginationLoading(true);
       } else {
@@ -108,99 +96,196 @@ const BookingList = ({ userRole = 'Student', onViewBooking, onCreateBooking, ini
       }
       setError(null);
 
-      // Use current API filters with pagination
+      // Backend returns plain array without pagination metadata
+      // Strategy: Get total count first (without pagination), then get specific page
+
+      // Step 1: Get total count (only on initial load or filter change)
+      let totalCount = totalBookings; // Use cached value for pagination
+      if (!isPagination) {
+        // Get all bookings to determine total count
+        // IMPORTANT: Don't send page/pageSize to get all items
+        const countFilters = {
+          roomId: apiFilters.roomId,
+          userId: apiFilters.userId,
+          status: apiFilters.status,
+          from: apiFilters.from,
+          to: apiFilters.to
+          // Explicitly exclude page and pageSize
+        };
+
+        // Clean up empty filters
+        const cleanCountFilters = Object.fromEntries(
+          Object.entries(countFilters).filter(([key, value]) =>
+            value !== '' && value !== null && value !== undefined
+          )
+        );
+
+        console.log('[BookingList] Getting total count with filters:', cleanCountFilters);
+
+        try {
+          const allBookings = await bookingApi.getBookings(cleanCountFilters);
+          if (Array.isArray(allBookings)) {
+            totalCount = allBookings.length;
+            console.log('[BookingList] Total count from API:', totalCount);
+          }
+        } catch (authErr) {
+          // If 401, try to refresh token and retry once
+          if (authErr.status === 401) {
+            try {
+              await authApi.refreshAuthToken();
+              const allBookings = await bookingApi.getBookings(cleanCountFilters);
+              if (Array.isArray(allBookings)) {
+                totalCount = allBookings.length;
+                console.log('[BookingList] Total count from API (after refresh):', totalCount);
+              }
+            } catch (refreshErr) {
+              throw authErr;
+            }
+          } else {
+            throw authErr;
+          }
+        }
+      } else {
+        console.log('[BookingList] Using cached total count:', totalCount);
+      }
+
+      // Step 2: Get specific page data
       const filters = {
         ...apiFilters,
-        page: page - 1, // Backend uses 0-based pagination
+        page: page,
         pageSize: pageSize
       };
-      
+
       // Clean up empty filters
       const cleanFilters = Object.fromEntries(
-        Object.entries(filters).filter(([key, value]) => 
+        Object.entries(filters).filter(([key, value]) =>
           value !== '' && value !== null && value !== undefined
         )
       );
 
-      const bookingList = await bookingApi.getBookings(cleanFilters);
-      
-      setBookings(bookingList || []);
-      setTotalBookings(bookingList?.length || 0);
-      
-      // Calculate total pages (simplified - backend should provide this)
-      const calculatedTotalPages = Math.ceil((bookingList?.length || 0) / pageSize);
-      setTotalPages(calculatedTotalPages || 1);
-      
+      // Get paginated data
+      let bookingList;
+      try {
+        bookingList = await bookingApi.getBookings(cleanFilters);
+      } catch (authErr) {
+        // If 401, try to refresh token and retry once
+        if (authErr.status === 401) {
+          try {
+            await authApi.refreshAuthToken();
+            bookingList = await bookingApi.getBookings(cleanFilters);
+          } catch (refreshErr) {
+            throw authErr; // Throw original error if refresh fails
+          }
+        } else {
+          throw authErr;
+        }
+      }
+
+      console.log('[BookingList] Loaded bookings:', {
+        page,
+        pageSize,
+        totalCount,
+        receivedItems: Array.isArray(bookingList) ? bookingList.length : 0
+      });
+
+      // Backend returns plain array with server-side pagination
+      let bookingData = [];
+      if (Array.isArray(bookingList)) {
+        bookingData = bookingList.map(normalizeBooking);
+      }
+
+      const totalPagesFromCount = Math.max(1, Math.ceil(totalCount / pageSize));
+
+      setBookings(bookingData);
+      setTotalPages(totalPagesFromCount);
+      setTotalBookings(totalCount);
+
+      // Calculate stats from current page only
+      const approvedCount = bookingData.filter(b => b.status === 1).length;
+      setStats({
+        total: totalCount,
+        approved: approvedCount // This is only for current page, not accurate for total
+      });
     } catch (err) {
       console.error('Error loading bookings:', err);
-      setError(err.message || 'Failed to load bookings');
+
+      // Handle specific error types
+      if (err.status === 401) {
+        setError('Authentication required. Please log in again.');
+      } else if (err.status === 403) {
+        setError('Access denied. You do not have permission to view bookings.');
+      } else if (err.status === 0) {
+        setError('Unable to connect to server. Please check your internet connection.');
+      } else {
+        setError(err.message || 'Unable to load booking list');
+      }
+
       setBookings([]);
+      setTotalBookings(0);
+      setTotalPages(1);
     } finally {
       setLoading(false);
       setPaginationLoading(false);
     }
-  }, [currentPage, pageSize, apiFilters]);
+  }, [apiFilters, pageSize, totalBookings]);
 
   useEffect(() => {
     loadBookings(currentPage);
   }, [loadBookings, currentPage]);
 
-  // Pagination handlers
+  // Format date for display
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return 'N/A';
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return 'N/A';
+    }
+  };
+
+  // Get status badge class
+  const getStatusBadgeClass = (status) => {
+    const statusMap = {
+      0: 'status-badge status-pending',
+      1: 'status-badge status-available', // Approved
+      2: 'status-badge status-unavailable', // Rejected
+      3: 'status-badge status-maintenance', // Cancelled
+      4: 'status-badge status-occupied' // Completed
+    };
+    return statusMap[status] || 'status-badge unknown';
+  };
+
+  const getStatusLabel = (status) => {
+    const statusMap = {
+      0: 'Pending',
+      1: 'Approved',
+      2: 'Rejected',
+      3: 'Cancelled',
+      4: 'Completed'
+    };
+    return statusMap[status] || 'Unknown';
+  };
+
+  // Pagination handler
   const handlePageChange = (newPage) => {
-    if (newPage >= 1 && newPage <= totalPages && newPage !== currentPage) {
+    if (newPage >= 1 && newPage <= totalPages) {
       setCurrentPage(newPage);
       loadBookings(newPage, true);
     }
   };
 
-  // Approve booking
-  const handleApproveBooking = async () => {
-    if (!selectedBooking) return;
-    
-    try {
-      setActionLoading(true);
-      await bookingApi.updateBookingStatus(selectedBooking.id, {
-        status: BOOKING_STATUS.APPROVED,
-        notes: approveNotes || 'Approved by admin'
-      });
-      setShowApproveModal(false);
-      setSelectedBooking(null);
-      setApproveNotes('');
-      showToast('Booking approved successfully!', 'success');
-      await loadBookings(currentPage);
-    } catch (err) {
-      showToast(err.message || 'Failed to approve booking', 'error');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  // Reject booking
-  const handleRejectBooking = async () => {
-    if (!selectedBooking) return;
-    
-    try {
-      setActionLoading(true);
-      await bookingApi.updateBookingStatus(selectedBooking.id, {
-        status: BOOKING_STATUS.REJECTED,
-        notes: rejectNotes || 'Rejected by admin'
-      });
-      setShowRejectModal(false);
-      setSelectedBooking(null);
-      setRejectNotes('');
-      showToast('Booking rejected successfully!', 'success');
-      await loadBookings(currentPage);
-    } catch (err) {
-      showToast(err.message || 'Failed to reject booking', 'error');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  // Delete booking
+  // Handle delete booking
   const handleDeleteBooking = async (bookingId) => {
     const bookingToDelete = bookings.find(b => b.id === bookingId);
-    
+
     // Remove from UI immediately
     setBookings(prev => prev.filter(booking => booking.id !== bookingId));
     setTotalBookings(prev => prev - 1);
@@ -217,48 +302,51 @@ const BookingList = ({ userRole = 'Student', onViewBooking, onCreateBooking, ini
     }
   };
 
-  // Bulk approve
-  const handleBulkApprove = async () => {
+  // Handle status update
+  const handleStatusUpdate = async (statusData) => {
+    const originalBooking = bookings.find(b => b.id === selectedBooking.id);
+    
+    // Create optimistic update
+    const optimisticBooking = {
+      ...originalBooking,
+      status: statusData.status,
+      isOptimistic: true
+    };
+
+    // Update UI immediately
+    setBookings(prev => prev.map(booking => 
+      booking.id === selectedBooking.id ? optimisticBooking : booking
+    ));
+
     try {
       setActionLoading(true);
-      const approvePromises = selectedBookings.map(bookingId =>
-        bookingApi.updateBookingStatus(bookingId, {
-          status: BOOKING_STATUS.APPROVED,
-          notes: 'Bulk approved by admin'
-        })
-      );
-      await Promise.all(approvePromises);
-      setShowBulkApproveModal(false);
-      setSelectedBookings([]);
-      showToast(`${selectedBookings.length} bookings approved successfully!`, 'success');
-      await loadBookings(currentPage);
+      const updatedBooking = await bookingApi.updateBookingStatus(selectedBooking.id, statusData.status, statusData.notes || '');
+      
+      // Replace with real updated booking
+      setBookings(prev => prev.map(booking => 
+        booking.id === selectedBooking.id 
+          ? { ...updatedBooking, isOptimistic: false }
+          : booking
+      ));
+      
+      setShowStatusModal(false);
+      setSelectedBooking(null);
+      showToast('Status updated successfully!', 'success');
     } catch (err) {
-      showToast(err.message || 'Failed to bulk approve bookings', 'error');
+      // Revert to original booking on error
+      setBookings(prev => prev.map(booking => 
+        booking.id === selectedBooking.id ? originalBooking : booking
+      ));
+      showToast(err.message || 'Failed to update status', 'error');
     } finally {
       setActionLoading(false);
     }
   };
 
-  // Toggle booking selection
-  const toggleBookingSelection = (bookingId) => {
-    setSelectedBookings(prev => 
-      prev.includes(bookingId) 
-        ? prev.filter(id => id !== bookingId)
-        : [...prev, bookingId]
-    );
-  };
-
-  // Select all pending bookings
-  const selectAllPending = () => {
-    const pendingBookings = bookings
-      .filter(b => b.status === BOOKING_STATUS.PENDING)
-      .map(b => b.id);
-    setSelectedBookings(pendingBookings);
-  };
-
-  // Clear selection
-  const clearSelection = () => {
-    setSelectedBookings([]);
+  // Open status modal
+  const openStatusModal = (booking) => {
+    setSelectedBooking(booking);
+    setShowStatusModal(true);
   };
 
   // Apply filters
@@ -274,35 +362,15 @@ const BookingList = ({ userRole = 'Student', onViewBooking, onCreateBooking, ini
       userId: '',
       status: '',
       from: '',
-      to: '',
-      page: 1,
-      pageSize: 10
+      to: ''
     });
     setCurrentPage(1);
     loadBookings(1);
   };
 
-  // Get status badge class
-  const getStatusBadgeClass = (status) => {
-    switch (status) {
-      case BOOKING_STATUS.PENDING:
-        return 'status-badge status-pending';
-      case BOOKING_STATUS.APPROVED:
-        return 'status-badge status-approved';
-      case BOOKING_STATUS.REJECTED:
-        return 'status-badge status-rejected';
-      case BOOKING_STATUS.CANCELLED:
-        return 'status-badge status-cancelled';
-      case BOOKING_STATUS.COMPLETED:
-        return 'status-badge status-completed';
-      default:
-        return 'status-badge';
-    }
-  };
-
   if (loading) {
     return (
-      <div className="booking-list-container">
+      <div className="room-list-container">
         <div className="loading">
           <div className="loading-spinner"></div>
           Loading bookings...
@@ -312,404 +380,350 @@ const BookingList = ({ userRole = 'Student', onViewBooking, onCreateBooking, ini
   }
 
   return (
-    <div className="booking-list-container">
-      <div className="booking-list-header">
-        <h2>Booking Management</h2>
-        {isAdmin && (
-          <button
-            className="btn-new-booking"
-            onClick={() => onCreateBooking && onCreateBooking()}
-            disabled={actionLoading}
+    <div className="room-list-container">
+      <>
+        <div className="room-list-header">
+          <h2>Room Booking Management</h2>
+          {isAdmin && onCreateBooking && (
+            <button
+              className="btn-new-booking"
+              onClick={onCreateBooking}
+              disabled={actionLoading}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 12h14"></path>
+                <path d="M12 5v14"></path>
+              </svg>
+              Create New Booking
+            </button>
+          )}
+        </div>
+
+        {/* Success/Error Notification above table */}
+        {toast && (
+          <div
+            className="table-notification"
+            style={{
+              backgroundColor: toast.type === 'success' ? '#d1fae5' : '#fee2e2',
+              color: toast.type === 'success' ? '#065f46' : '#dc2626',
+              border: toast.type === 'success' ? '1px solid #a7f3d0' : '1px solid #fecaca',
+              padding: '12px 16px',
+              borderRadius: '8px',
+              marginBottom: '20px',
+              fontSize: '14px',
+              fontWeight: '500',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M5 12h14"></path>
-              <path d="M12 5v14"></path>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              {toast.type === 'success' ? (
+                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              ) : (
+                <path d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              )}
             </svg>
-            Create New Booking
-          </button>
+            {toast.message}
+          </div>
         )}
-      </div>
 
-      {/* Toast Notification */}
-      {toast && (
-        <div className={`toast toast-${toast.type}`}>
-          {toast.message}
-        </div>
-      )}
-
-      {/* Filters */}
-      <div className="filters-section">
-        <div className="filters-grid">
-          <div className="filter-group">
-            <label>Room</label>
-            <select
-              value={apiFilters.roomId}
-              onChange={(e) => setApiFilters({ ...apiFilters, roomId: e.target.value })}
-            >
-              <option value="">All Rooms</option>
-              {rooms.map(room => (
-                <option key={room.id} value={room.id}>{room.name}</option>
-              ))}
-            </select>
+        {error && (
+          <div className="error-message">
+            {error}
+            <div className="error-actions">
+              <button onClick={() => loadBookings()} className="btn btn-secondary">
+                Retry
+              </button>
+              {error.includes('Authentication required') && (
+                <button
+                  className="btn btn-primary"
+                  onClick={() => {
+                    // Clear tokens and redirect to login
+                    localStorage.removeItem('accessToken');
+                    localStorage.removeItem('refreshToken');
+                    sessionStorage.removeItem('accessToken');
+                    sessionStorage.removeItem('refreshToken');
+                    window.location.href = '/login';
+                  }}
+                >
+                  Go to Login
+                </button>
+              )}
+            </div>
           </div>
+        )}
 
-          <div className="filter-group">
-            <label>Status</label>
-            <select
-              value={apiFilters.status}
-              onChange={(e) => setApiFilters({ ...apiFilters, status: e.target.value })}
-            >
-              {BOOKING_STATUS_OPTIONS.map(option => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="filter-group">
-            <label>From Date</label>
-            <input
-              type="datetime-local"
-              value={apiFilters.from}
-              onChange={(e) => setApiFilters({ ...apiFilters, from: e.target.value })}
-            />
-          </div>
-
-          <div className="filter-group">
-            <label>To Date</label>
-            <input
-              type="datetime-local"
-              value={apiFilters.to}
-              onChange={(e) => setApiFilters({ ...apiFilters, to: e.target.value })}
-            />
-          </div>
+        <div className="room-list-stats">
+          <span>Total bookings: {totalBookings}</span>
+          <span>Page {currentPage} / {totalPages}</span>
         </div>
 
-        <div className="filter-actions">
-          <button className="btn-primary" onClick={applyFilters}>
-            Apply Filters
-          </button>
-          <button className="btn-secondary" onClick={clearFilters}>
-            Clear Filters
-          </button>
-        </div>
-      </div>
+        {/* Filter Controls */}
+        <div className="filter-controls">
+          <div className="filter-row">
+            <div className="filter-group">
+              <select
+                value={apiFilters.status}
+                onChange={(e) => setApiFilters(prev => ({ ...prev, status: e.target.value }))}
+                className="filter-select"
+              >
+                <option value="">All Status</option>
+                <option value="0">Pending</option>
+                <option value="1">Approved</option>
+                <option value="2">Rejected</option>
+                <option value="3">Cancelled</option>
+                <option value="4">Completed</option>
+              </select>
+              <input
+                type="date"
+                placeholder="From Date"
+                value={apiFilters.from}
+                onChange={(e) => setApiFilters(prev => ({ ...prev, from: e.target.value }))}
+                className="filter-input"
+              />
+              <input
+                type="date"
+                placeholder="To Date"
+                value={apiFilters.to}
+                onChange={(e) => setApiFilters(prev => ({ ...prev, to: e.target.value }))}
+                className="filter-input"
+              />
+            </div>
 
-      {/* Bulk Actions */}
-      {isAdmin && selectedBookings.length > 0 && (
-        <div className="bulk-actions-bar">
-          <span>{selectedBookings.length} booking(s) selected</span>
-          <div className="bulk-actions-buttons">
-            <button
-              className="btn-approve"
-              onClick={() => setShowBulkApproveModal(true)}
-            >
-              Bulk Approve
-            </button>
-            <button
-              className="btn-secondary"
-              onClick={clearSelection}
-            >
-              Clear Selection
-            </button>
+            <div className="filter-actions">
+              <button
+                className="btn btn-primary"
+                onClick={applyFilters}
+                disabled={actionLoading}
+              >
+                Apply Filters
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={clearFilters}
+                disabled={actionLoading}
+              >
+                Clear Filters
+              </button>
+            </div>
           </div>
         </div>
-      )}
 
-      {/* Quick Actions */}
-      {isAdmin && bookings.some(b => b.status === BOOKING_STATUS.PENDING) && (
-        <div className="quick-actions">
-          <button
-            className="btn-link"
-            onClick={selectAllPending}
-          >
-            Select All Pending ({bookings.filter(b => b.status === BOOKING_STATUS.PENDING).length})
-          </button>
-        </div>
-      )}
-
-      {/* Error Message */}
-      {error && (
-        <div className="error-message">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="8" x2="12" y2="12"></line>
-            <line x1="12" y1="16" x2="12.01" y2="16"></line>
-          </svg>
-          {error}
-        </div>
-      )}
-
-      {/* Bookings Table */}
-      {bookings.length === 0 ? (
-        <div className="empty-state">
-          <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-            <line x1="16" y1="2" x2="16" y2="6"></line>
-            <line x1="8" y1="2" x2="8" y2="6"></line>
-            <line x1="3" y1="10" x2="21" y2="10"></line>
-          </svg>
-          <h3>No bookings found</h3>
-          <p>There are no bookings matching your criteria.</p>
-        </div>
-      ) : (
-        <div className="table-container">
-          <table className="booking-table">
+        <div className="room-table-container">
+          <table className="room-table">
             <thead>
               <tr>
-                {isAdmin && <th style={{ width: '40px' }}>
-                  <input
-                    type="checkbox"
-                    checked={selectedBookings.length === bookings.filter(b => b.status === BOOKING_STATUS.PENDING).length && bookings.filter(b => b.status === BOOKING_STATUS.PENDING).length > 0}
-                    onChange={(e) => e.target.checked ? selectAllPending() : clearSelection()}
-                  />
-                </th>}
-                <th>User</th>
-                <th>Room</th>
+                <th>ID</th>
+                <th className="col-name">Room</th>
+                {isAdmin && <th>User</th>}
                 <th>Start Time</th>
                 <th>End Time</th>
-                <th>Duration</th>
-                <th>Purpose</th>
                 <th>Status</th>
-                <th>Actions</th>
+                {isAdmin && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
-              {bookings.map((booking) => (
-                <tr key={booking.id}>
-                  {isAdmin && <td>
-                    {booking.status === BOOKING_STATUS.PENDING && (
-                      <input
-                        type="checkbox"
-                        checked={selectedBookings.includes(booking.id)}
-                        onChange={() => toggleBookingSelection(booking.id)}
-                      />
-                    )}
-                  </td>}
-                  <td>{booking.userName}</td>
-                  <td>{booking.roomName}</td>
-                  <td>{formatBookingDate(booking.startTime)}</td>
-                  <td>{formatBookingDate(booking.endTime)}</td>
-                  <td>{getBookingDuration(booking.startTime, booking.endTime)}h</td>
-                  <td>
-                    <div className="purpose-cell" title={booking.purpose}>
-                      {booking.purpose?.substring(0, 30)}{booking.purpose?.length > 30 ? '...' : ''}
-                    </div>
-                  </td>
-                  <td>
-                    <span className={getStatusBadgeClass(booking.status)}>
-                      {getBookingStatusLabel(booking.status)}
-                    </span>
-                  </td>
-                  <td>
-                    <div className="action-buttons">
-                      <button
-                        className="btn-icon"
-                        onClick={() => onViewBooking && onViewBooking(booking.id)}
-                        title="View Details"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                          <circle cx="12" cy="12" r="3"></circle>
-                        </svg>
-                      </button>
-
-                      {isAdmin && canApproveBooking(booking.status) && (
-                        <button
-                          className="btn-icon btn-approve"
-                          onClick={() => {
-                            setSelectedBooking(booking);
-                            setShowApproveModal(true);
-                          }}
-                          title="Approve"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="20 6 9 17 4 12"></polyline>
-                          </svg>
-                        </button>
-                      )}
-
-                      {isAdmin && canRejectBooking(booking.status) && (
-                        <button
-                          className="btn-icon btn-reject"
-                          onClick={() => {
-                            setSelectedBooking(booking);
-                            setShowRejectModal(true);
-                          }}
-                          title="Reject"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <line x1="18" y1="6" x2="6" y2="18"></line>
-                            <line x1="6" y1="6" x2="18" y2="18"></line>
-                          </svg>
-                        </button>
-                      )}
-
-                      {isAdmin && canDeleteBooking(booking.status) && (
-                        <button
-                          className="btn-icon btn-delete"
-                          onClick={() => setConfirmDeleteBooking(booking)}
-                          title="Delete"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="3 6 5 6 21 6"></polyline>
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                          </svg>
-                        </button>
-                      )}
-                    </div>
+              {loading && !paginationLoading ? (
+                <tr>
+                  <td colSpan={isAdmin ? "7" : "6"} className="loading-cell">
+                    <div className="loading-spinner"></div>
+                    Loading bookings...
                   </td>
                 </tr>
-              ))}
+              ) : paginationLoading ? (
+                // Show skeleton rows during pagination
+                Array.from({ length: pageSize }).map((_, index) => (
+                  <tr key={`skeleton-${index}`} className="skeleton-row">
+                    <td><div className="skeleton-text"></div></td>
+                    <td><div className="skeleton-text"></div></td>
+                    {isAdmin && <td><div className="skeleton-text"></div></td>}
+                    <td><div className="skeleton-text"></div></td>
+                    <td><div className="skeleton-text"></div></td>
+                    <td><div className="skeleton-text"></div></td>
+                    {isAdmin && <td><div className="skeleton-text"></div></td>}
+                  </tr>
+                ))
+              ) : bookings.length === 0 ? (
+                <tr>
+                  <td colSpan={isAdmin ? "7" : "6"} className="no-data">
+                    No booking data
+                  </td>
+                </tr>
+              ) : (
+                bookings.map((booking) => (
+                  <tr key={booking.id} className={booking.isOptimistic ? 'optimistic-row' : ''}>
+                    <td>
+                      {typeof booking.id === 'string' && booking.id.length > 8
+                        ? `${booking.id.substring(0, 8)}...`
+                        : `#${booking.id}`}
+                      {booking.isOptimistic && (
+                        <span className="optimistic-indicator" title="Saving...">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M21 12a9 9 0 11-6.219-8.56"/>
+                          </svg>
+                        </span>
+                      )}
+                    </td>
+                    <td className="col-name">
+                      <strong>{booking.roomName}</strong>
+                    </td>
+                    {isAdmin && <td>{booking.userName}</td>}
+                    <td>{formatDate(booking.startTime)}</td>
+                    <td>{formatDate(booking.endTime)}</td>
+                    <td>
+                      <span className={getStatusBadgeClass(booking.status)}>
+                        {getStatusLabel(booking.status)}
+                      </span>
+                    </td>
+                    {isAdmin && (
+                      <td>
+                        <div className="action-buttons">
+                          {onViewBooking && (
+                            <button
+                              className="btn btn-sm btn-icon btn-icon-outline color-yellow"
+                              onClick={() => onViewBooking(booking.id)}
+                              disabled={actionLoading}
+                              aria-label="View details"
+                              title="View"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/>
+                                <circle cx="12" cy="12" r="3"/>
+                              </svg>
+                            </button>
+                          )}
+                          <button
+                            className="btn btn-sm btn-icon btn-icon-outline color-purple"
+                            onClick={() => openStatusModal(booking)}
+                            disabled={actionLoading}
+                            aria-label="Update status"
+                            title="Update Status"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M9 12l2 2 4-4"/>
+                              <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/>
+                            </svg>
+                          </button>
+                          <button
+                            className="btn btn-sm btn-icon btn-icon-outline color-red"
+                            onClick={() => setConfirmDeleteBooking(booking)}
+                            disabled={actionLoading}
+                            aria-label="Delete booking"
+                            title="Delete"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="3 6 5 6 21 6"/>
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+                              <path d="M10 11v6"/>
+                              <path d="M14 11v6"/>
+                              <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>
+                            </svg>
+                          </button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
-      )}
 
-      {/* Pagination */}
-      {totalPages > 1 && (
+        {/* Pagination */}
         <div className="pagination">
           <button
-            className="pagination-btn"
+            className="btn btn-secondary"
             onClick={() => handlePageChange(currentPage - 1)}
-            disabled={currentPage === 1 || paginationLoading}
+            disabled={currentPage === 1 || actionLoading || paginationLoading}
           >
-            Previous
+            {paginationLoading && currentPage > 1 ? (
+              <>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="spinning">
+                  <path d="M21 12a9 9 0 11-6.219-8.56"/>
+                </svg>
+                Loading...
+              </>
+            ) : (
+              'Previous'
+            )}
           </button>
-          <span className="pagination-info">
-            Page {currentPage} of {totalPages}
+          <span className="page-info">
+            Page {currentPage} / {totalPages}
+            {paginationLoading && (
+              <span className="pagination-loading-indicator">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="spinning">
+                  <path d="M21 12a9 9 0 11-6.219-8.56"/>
+                </svg>
+              </span>
+            )}
           </span>
           <button
-            className="pagination-btn"
+            className="btn btn-secondary"
             onClick={() => handlePageChange(currentPage + 1)}
-            disabled={currentPage === totalPages || paginationLoading}
+            disabled={currentPage === totalPages || actionLoading || paginationLoading}
           >
-            Next
+            {paginationLoading && currentPage < totalPages ? (
+              <>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="spinning">
+                  <path d="M21 12a9 9 0 11-6.219-8.56"/>
+                </svg>
+                Loading...
+              </>
+            ) : (
+              'Next'
+            )}
           </button>
         </div>
-      )}
+      </>
 
-      {/* Approve Modal */}
-      {showApproveModal && selectedBooking && (
-        <div className="modal-overlay" onClick={() => setShowApproveModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Approve Booking</h3>
-              <button className="modal-close" onClick={() => setShowApproveModal(false)}>×</button>
-            </div>
-            <div className="modal-body">
-              <p>Are you sure you want to approve this booking?</p>
-              <div className="booking-info">
-                <p><strong>User:</strong> {selectedBooking.userName}</p>
-                <p><strong>Room:</strong> {selectedBooking.roomName}</p>
-                <p><strong>Time:</strong> {formatBookingDate(selectedBooking.startTime)} - {formatBookingDate(selectedBooking.endTime)}</p>
-              </div>
-              <div className="form-group">
-                <label>Notes (Optional)</label>
-                <textarea
-                  value={approveNotes}
-                  onChange={(e) => setApproveNotes(e.target.value)}
-                  placeholder="Add any notes about this approval..."
-                  rows="3"
-                />
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn-secondary" onClick={() => setShowApproveModal(false)} disabled={actionLoading}>
-                Cancel
-              </button>
-              <button className="btn-approve" onClick={handleApproveBooking} disabled={actionLoading}>
-                {actionLoading ? 'Approving...' : 'Approve'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Reject Modal */}
-      {showRejectModal && selectedBooking && (
-        <div className="modal-overlay" onClick={() => setShowRejectModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Reject Booking</h3>
-              <button className="modal-close" onClick={() => setShowRejectModal(false)}>×</button>
-            </div>
-            <div className="modal-body">
-              <p>Are you sure you want to reject this booking?</p>
-              <div className="booking-info">
-                <p><strong>User:</strong> {selectedBooking.userName}</p>
-                <p><strong>Room:</strong> {selectedBooking.roomName}</p>
-                <p><strong>Time:</strong> {formatBookingDate(selectedBooking.startTime)} - {formatBookingDate(selectedBooking.endTime)}</p>
-              </div>
-              <div className="form-group">
-                <label>Reason for Rejection *</label>
-                <textarea
-                  value={rejectNotes}
-                  onChange={(e) => setRejectNotes(e.target.value)}
-                  placeholder="Please provide a reason for rejection..."
-                  rows="3"
-                  required
-                />
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn-secondary" onClick={() => setShowRejectModal(false)} disabled={actionLoading}>
-                Cancel
-              </button>
-              <button className="btn-reject" onClick={handleRejectBooking} disabled={actionLoading || !rejectNotes}>
-                {actionLoading ? 'Rejecting...' : 'Reject'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Bulk Approve Modal */}
-      {showBulkApproveModal && (
-        <div className="modal-overlay" onClick={() => setShowBulkApproveModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Bulk Approve Bookings</h3>
-              <button className="modal-close" onClick={() => setShowBulkApproveModal(false)}>×</button>
-            </div>
-            <div className="modal-body">
-              <p>Are you sure you want to approve {selectedBookings.length} booking(s)?</p>
-              <p className="warning-text">This action cannot be undone.</p>
-            </div>
-            <div className="modal-footer">
-              <button className="btn-secondary" onClick={() => setShowBulkApproveModal(false)} disabled={actionLoading}>
-                Cancel
-              </button>
-              <button className="btn-approve" onClick={handleBulkApprove} disabled={actionLoading}>
-                {actionLoading ? 'Approving...' : `Approve ${selectedBookings.length} Booking(s)`}
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Status Update Modal */}
+      {showStatusModal && selectedBooking && (
+        <BookingStatusForm
+          booking={selectedBooking}
+          onSubmit={handleStatusUpdate}
+          onCancel={() => {
+            setShowStatusModal(false);
+            setSelectedBooking(null);
+          }}
+          loading={actionLoading}
+        />
       )}
 
       {/* Delete Confirmation Modal */}
       {confirmDeleteBooking && (
-        <div className="modal-overlay" onClick={() => setConfirmDeleteBooking(null)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="modal">
             <div className="modal-header">
-              <h3>Delete Booking</h3>
-              <button className="modal-close" onClick={() => setConfirmDeleteBooking(null)}>×</button>
+              <h3>Confirm Delete</h3>
             </div>
             <div className="modal-body">
-              <p>Are you sure you want to delete this booking?</p>
-              <div className="booking-info">
-                <p><strong>User:</strong> {confirmDeleteBooking.userName}</p>
-                <p><strong>Room:</strong> {confirmDeleteBooking.roomName}</p>
-                <p><strong>Time:</strong> {formatBookingDate(confirmDeleteBooking.startTime)}</p>
-              </div>
-              <p className="warning-text">This action cannot be undone.</p>
+              <p>Are you sure you want to delete booking <strong>#{confirmDeleteBooking.id}</strong>?</p>
+              <p className="text-muted small">This action cannot be undone.</p>
             </div>
             <div className="modal-footer">
-              <button className="btn-secondary" onClick={() => setConfirmDeleteBooking(null)}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => setConfirmDeleteBooking(null)}
+                disabled={actionLoading}
+              >
                 Cancel
               </button>
-              <button className="btn-delete" onClick={() => handleDeleteBooking(confirmDeleteBooking.id)}>
-                Delete
+              <button
+                className="btn btn-danger"
+                onClick={() => handleDeleteBooking(confirmDeleteBooking.id)}
+                disabled={actionLoading}
+              >
+                {actionLoading ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>

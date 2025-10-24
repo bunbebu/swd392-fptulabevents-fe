@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { bookingApi } from '../../../api';
-import { 
-  BOOKING_STATUS, 
-  getBookingStatusLabel, 
+import {
+  BOOKING_STATUS,
+  getBookingStatusLabel,
   formatBookingDate,
   canApproveBooking,
   canRejectBooking,
   canDeleteBooking,
   getBookingDuration
 } from '../../../constants/bookingConstants';
+import { BookingStatusForm } from '../admin';
 
 /**
  * Booking Detail Component
@@ -31,6 +32,7 @@ const BookingDetail = ({ bookingId, onNavigateBack, userRole = 'Student' }) => {
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showStatusForm, setShowStatusForm] = useState(false);
   const [approveNotes, setApproveNotes] = useState('');
   const [rejectNotes, setRejectNotes] = useState('');
 
@@ -118,6 +120,26 @@ const BookingDetail = ({ bookingId, onNavigateBack, userRole = 'Student' }) => {
     }
   };
 
+  const handleStatusUpdate = async (formData) => {
+    try {
+      setActionLoading(true);
+      await bookingApi.updateBookingStatus(bookingId, {
+        status: formData.status,
+        notes: formData.notes || 'Status updated by admin'
+      });
+      setShowStatusForm(false);
+      showToast('Booking status updated successfully!', 'success');
+
+      // Reload booking data
+      const updatedBooking = await bookingApi.getBookingById(bookingId);
+      setBooking(updatedBooking);
+    } catch (err) {
+      showToast(err.message || 'Failed to update booking status', 'error');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const getStatusBadgeClass = (status) => {
     switch (status) {
       case BOOKING_STATUS.PENDING:
@@ -188,8 +210,26 @@ const BookingDetail = ({ bookingId, onNavigateBack, userRole = 'Student' }) => {
       {/* Action Buttons */}
       {isAdmin && (
         <div className="detail-actions">
+          <button
+            className="btn-primary"
+            onClick={() => setShowStatusForm(true)}
+            disabled={actionLoading}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              marginBottom: '12px'
+            }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+            </svg>
+            Update Status
+          </button>
+
           {canApproveBooking(booking.status) && (
-            <button 
+            <button
               className="btn-approve"
               onClick={() => setShowApproveModal(true)}
               disabled={actionLoading}
@@ -200,9 +240,9 @@ const BookingDetail = ({ bookingId, onNavigateBack, userRole = 'Student' }) => {
               Approve Booking
             </button>
           )}
-          
+
           {canRejectBooking(booking.status) && (
-            <button 
+            <button
               className="btn-reject"
               onClick={() => setShowRejectModal(true)}
               disabled={actionLoading}
@@ -214,9 +254,9 @@ const BookingDetail = ({ bookingId, onNavigateBack, userRole = 'Student' }) => {
               Reject Booking
             </button>
           )}
-          
+
           {canDeleteBooking(booking.status) && (
-            <button 
+            <button
               className="btn-delete"
               onClick={() => setShowDeleteModal(true)}
               disabled={actionLoading}
@@ -402,6 +442,16 @@ const BookingDetail = ({ bookingId, onNavigateBack, userRole = 'Student' }) => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Status Update Form Modal */}
+      {showStatusForm && (
+        <BookingStatusForm
+          booking={booking}
+          onSubmit={handleStatusUpdate}
+          onCancel={() => setShowStatusForm(false)}
+          loading={actionLoading}
+        />
       )}
     </div>
   );

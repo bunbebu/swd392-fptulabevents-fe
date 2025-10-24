@@ -1,11 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { authApi, bookingApi, eventApi, roomsApi, labsApi, notificationApi } from '../../api';
+import LabList from '../lab-management/components/LabList';
+import LabDetail from '../lab-management/components/LabDetail';
+import EventList from '../event-management/components/EventList';
 
 function Home({ user: userProp }) {
   const [user, setUser] = useState(userProp);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const userDropdownRef = useRef(null);
+  
+  // Lab detail state
+  const [selectedLabId, setSelectedLabId] = useState(null);
 
   // Data states
   const [upcomingBookings, setUpcomingBookings] = useState([]);
@@ -31,6 +37,8 @@ function Home({ user: userProp }) {
 
   // Load dashboard data
   useEffect(() => {
+    if (!user) return; // Wait for user to be loaded
+    
     if (activeTab === 'dashboard') {
       loadDashboardData();
     } else if (activeTab === 'bookings') {
@@ -76,8 +84,18 @@ function Home({ user: userProp }) {
   // Load available labs
   const loadAvailableLabs = async () => {
     try {
-      const response = await labsApi.getLabs({ pageSize: 10 });
+      const userRoleCheck = user?.roles?.[0] || 'Student';
+      const isLecturerCheck = user?.roles?.includes('Lecturer') || user?.roles?.includes('Teacher');
+      
+      console.log('Loading available labs for user role:', userRoleCheck);
+      // Use getAvailableLabs API for student/lecturer, getLabs for admin
+      const response = isLecturerCheck || userRoleCheck === 'Student' 
+        ? await labsApi.getAvailableLabs()
+        : await labsApi.getLabs({ pageSize: 10 });
+      
+      console.log('Labs API response:', response);
       const labs = Array.isArray(response) ? response : (response?.data || []);
+      console.log('Parsed labs:', labs);
       setAvailableLabs(labs);
     } catch (error) {
       console.error('Error loading labs:', error);
@@ -112,9 +130,40 @@ function Home({ user: userProp }) {
   // Load upcoming events
   const loadUpcomingEvents = async () => {
     try {
+      console.log('Loading upcoming events...');
       const response = await eventApi.getUpcomingEvents();
-      const events = Array.isArray(response) ? response : (response?.data || []);
-      setUpcomingEvents(events.slice(0, 5)); // Limit to 5 for dashboard
+      console.log('Events API response:', response);
+      
+      // Handle different response formats (same as EventList)
+      let eventData = [];
+      if (Array.isArray(response)) {
+        eventData = response;
+      } else if (response?.data && Array.isArray(response.data)) {
+        eventData = response.data;
+      } else if (response?.Data && Array.isArray(response.Data)) {
+        eventData = response.Data;
+      }
+      
+      console.log('Parsed events:', eventData);
+      console.log('Number of events:', eventData.length);
+      
+      // Normalize event data to handle both Title/title properties
+      const normalizedEvents = eventData.map(event => normalizeEvent(event));
+      
+      console.log('Normalized events:', normalizedEvents);
+      
+      // Filter only upcoming events (StartDate >= today)
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const upcoming = normalizedEvents.filter(event => {
+        if (!event.StartDate) return false;
+        const startDate = new Date(event.StartDate);
+        return startDate >= today;
+      });
+      
+      console.log('Upcoming events after filtering:', upcoming);
+      setUpcomingEvents(upcoming.slice(0, 5)); // Limit to 5 for dashboard
     } catch (error) {
       console.error('Error loading events:', error);
       setUpcomingEvents([]);
@@ -146,9 +195,27 @@ function Home({ user: userProp }) {
   const loadEventsData = async () => {
     try {
       setLoadingData(true);
+      console.log('Loading all events for events tab...');
       const response = await eventApi.getUpcomingEvents();
-      const events = Array.isArray(response) ? response : (response?.data || []);
-      setUpcomingEvents(events);
+      console.log('Events tab API response:', response);
+      
+      // Handle different response formats (same as EventList)
+      let eventData = [];
+      if (Array.isArray(response)) {
+        eventData = response;
+      } else if (response?.data && Array.isArray(response.data)) {
+        eventData = response.data;
+      } else if (response?.Data && Array.isArray(response.Data)) {
+        eventData = response.Data;
+      }
+      
+      console.log('Events tab parsed events:', eventData);
+      
+      // Normalize event data to handle both Title/title properties
+      const normalizedEvents = eventData.map(event => normalizeEvent(event));
+      
+      console.log('Events tab normalized events:', normalizedEvents);
+      setUpcomingEvents(normalizedEvents);
     } catch (error) {
       console.error('Error loading events:', error);
       setUpcomingEvents([]);
@@ -161,8 +228,18 @@ function Home({ user: userProp }) {
   const loadLabsData = async () => {
     try {
       setLoadingData(true);
-      const response = await labsApi.getLabs({ pageSize: 20 });
+      const userRoleCheck = user?.roles?.[0] || 'Student';
+      const isLecturerCheck = user?.roles?.includes('Lecturer') || user?.roles?.includes('Teacher');
+      
+      console.log('Loading labs data for user role:', userRoleCheck);
+      // Use getAvailableLabs API for student/lecturer, getLabs for admin
+      const response = isLecturerCheck || userRoleCheck === 'Student' 
+        ? await labsApi.getAvailableLabs()
+        : await labsApi.getLabs({ pageSize: 20 });
+      
+      console.log('Labs data API response:', response);
       const labs = Array.isArray(response) ? response : (response?.data || []);
+      console.log('Parsed labs data:', labs);
       setAvailableLabs(labs);
     } catch (error) {
       console.error('Error loading labs:', error);
@@ -236,11 +313,27 @@ function Home({ user: userProp }) {
     return names[0].substring(0, 2).toUpperCase();
   };
 
+  // Helper function to normalize event data (handle both Title/title)
+  const normalizeEvent = (event) => {
+    return {
+      ...event,
+      Id: event.Id || event.id,
+      Title: event.Title || event.title || 'Untitled Event',
+      Description: event.Description || event.description,
+      Location: event.Location || event.location,
+      StartDate: event.StartDate || event.startDate,
+      EndDate: event.EndDate || event.endDate,
+      Status: event.Status || event.status,
+      CreatedBy: event.CreatedBy || event.createdBy
+    };
+  };
+
   const displayName = user?.fullname || user?.username || 'User';
   const displayEmail = user?.email || 'user@fpt.edu.vn';
   const avatarInitials = getAvatarInitials(displayName);
   const userRole = user?.roles?.[0] || 'Student';
   const isLecturer = user?.roles?.includes('Lecturer') || user?.roles?.includes('Teacher');
+  const isAdmin = user?.roles?.includes('Admin');
 
   // Navigation tabs - different for Student and Lecturer
   const tabs = [
@@ -477,16 +570,38 @@ function Home({ user: userProp }) {
               </div>
             ) : (
               <div className="home-event-list">
-                {upcomingEvents.slice(0, 3).map(event => (
-                  <div key={event.Id} className="home-event-item">
+                {upcomingEvents.slice(0, 3).map(event => {
+                  const normalized = normalizeEvent(event);
+                  return (
+                    <div key={normalized.Id} className="home-event-item">
                     <div className="home-event-info">
-                      <h4>{event.Title}</h4>
-                      <p>{formatDate(event.StartDate)} • {formatTime(event.StartDate)} - {formatTime(event.EndDate)}</p>
-                      {event.Location && <p className="home-event-location">{event.Location}</p>}
+                        <h4>{normalized.Title}</h4>
+                        <p className="home-event-date">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12 6 12 12 16 14"></polyline>
+                          </svg>
+                          {formatDate(normalized.StartDate)} • {formatTime(normalized.StartDate)} - {formatTime(normalized.EndDate)}
+                        </p>
+                        {normalized.Location && (
+                          <p className="home-event-location">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                              <circle cx="12" cy="10" r="3"></circle>
+                            </svg>
+                            {normalized.Location}
+                          </p>
+                        )}
+                        {normalized.Description && (
+                          <p className="home-event-description">{normalized.Description.substring(0, 100)}...</p>
+                        )}
                     </div>
-                    <button className="btn-register">Register</button>
+                      <button className="btn-register" onClick={() => setActiveTab('events')}>
+                        View Details
+                      </button>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -547,147 +662,41 @@ function Home({ user: userProp }) {
     </div>
   );
 
-  const renderLabs = () => (
-    <div className="home-content">
-      <div className="content-header">
-        <div>
-          <h1>Browse Labs</h1>
-          <p className="subtitle">Find and book available labs for your needs</p>
-        </div>
-        <button className="btn-primary">
-          <svg xmlns="http://www.w3.org/2000/svg" width="1.125rem" height="1.125rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-          </svg>
-          Book a Lab
-        </button>
+  const renderLabs = () => {
+    if (selectedLabId) {
+      return (
+        <LabDetail 
+          labId={selectedLabId}
+          onNavigateBack={() => setSelectedLabId(null)}
+          isAdmin={isAdmin}
+          userRole={userRole}
+        />
+      );
+    }
+    
+    return (
+      <div className="home-content">
+        <LabList 
+          userRole={userRole}
+          onViewLab={(labId) => {
+            setSelectedLabId(labId);
+          }}
+        />
       </div>
-
-      {/* Search and Filters */}
-      <div className="table-controls">
-        <div className="search-box">
-          <svg xmlns="http://www.w3.org/2000/svg" width="1.125rem" height="1.125rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="11" cy="11" r="8"></circle>
-            <path d="m21 21-4.35-4.35"></path>
-          </svg>
-          <input type="text" placeholder="Search labs by name or location..." />
-        </div>
-      </div>
-
-      {/* Labs Grid */}
-      <div className="labs-grid">
-        {loadingData ? (
-          <div className="empty-state">
-            <p>Loading labs...</p>
-          </div>
-        ) : availableLabs.length === 0 ? (
-          <div className="empty-state">
-            <p>No labs available</p>
-          </div>
-        ) : (
-          availableLabs.map(lab => (
-            <div key={lab.Id} className="lab-card">
-              <div className="lab-card-header">
-                <div className="lab-icon">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="1.5rem" height="1.5rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                    <polyline points="9 22 9 12 15 12 15 22"></polyline>
-                  </svg>
-                </div>
-                <span className={`status-badge status-${lab.Status.toLowerCase()}`}>
-                  {lab.Status}
-                </span>
-              </div>
-              <h3>{lab.Name}</h3>
-              <p className="lab-code">{lab.Location}</p>
-              <div className="lab-details">
-                <div className="lab-detail">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-                    <circle cx="12" cy="10" r="3"></circle>
-                  </svg>
-                  <span>{lab.Location}</span>
-                </div>
-                <div className="lab-detail">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                    <circle cx="12" cy="7" r="4"></circle>
-                  </svg>
-                  <span>Capacity: {lab.Capacity}</span>
-                </div>
-              </div>
-              <div className="lab-actions">
-                <button className="btn-secondary btn-sm">View Details</button>
-                {lab.Status === 'Active' && (
-                  <button className="btn-primary btn-sm">Book Now</button>
-                )}
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
+    );
+  };
 
   const renderEvents = () => (
     <div className="home-content">
-      <div className="content-header">
-        <div>
-          <h1>Available Events</h1>
-          <p className="subtitle">Register for workshops and seminars</p>
-        </div>
-      </div>
-
-      {/* Events List */}
-      <div className="events-list-view">
-        {loadingData ? (
-          <div className="empty-state">
-            <p>Loading events...</p>
-          </div>
-        ) : upcomingEvents.length === 0 ? (
-          <div className="empty-state">
-            <p>No upcoming events</p>
-          </div>
-        ) : (
-          upcomingEvents.map(event => (
-            <div key={event.Id} className="event-card-large">
-              <div className="event-content">
-                <div className="event-header">
-                  <div>
-                    <h3>{event.Title}</h3>
-                    <p className="event-organizer">Organized by {event.CreatedBy}</p>
-                  </div>
-                  <span className={`status-badge status-${event.Status.toLowerCase()}`}>
-                    {event.Status}
-                  </span>
-                </div>
-                <div className="event-meta">
-                  <div className="event-meta-item">
-            <svg xmlns="http://www.w3.org/2000/svg" width="1.125rem" height="1.125rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="10"></circle>
-                      <polyline points="12 6 12 12 16 14"></polyline>
-                    </svg>
-                    <span>{formatDate(event.StartDate)} • {formatTime(event.StartDate)} - {formatTime(event.EndDate)}</span>
-                  </div>
-                  {event.Location && (
-                    <div className="event-meta-item">
-            <svg xmlns="http://www.w3.org/2000/svg" width="1.125rem" height="1.125rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-                        <circle cx="12" cy="10" r="3"></circle>
-                      </svg>
-                      <span>{event.Location}</span>
-                    </div>
-                  )}
-                </div>
-                <div className="event-actions">
-                  <button className="btn-secondary">View Details</button>
-                  <button className="btn-primary">Register</button>
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
+      <EventList 
+        userRole={userRole}
+        onSelectEvent={(eventId) => {
+          console.log('Selected event:', eventId);
+        }}
+        onViewEvent={(eventId) => {
+          console.log('View event:', eventId);
+        }}
+      />
     </div>
   );
 

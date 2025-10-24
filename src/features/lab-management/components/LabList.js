@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { labsApi, authApi } from '../../../api';
+import { labsApi, authApi, roomsApi } from '../../../api';
 import LabStatusForm from '../admin/LabStatusForm';
 
 /**
@@ -34,6 +34,7 @@ const LabList = ({
   // eslint-disable-next-line no-unused-vars
   const [stats, setStats] = useState({ total: 0, available: 0 });
   const [toast, setToast] = useState(null);
+  const [roomsCache, setRoomsCache] = useState({});
 
   // Modal states
   const [showStatusModal, setShowStatusModal] = useState(false);
@@ -59,6 +60,80 @@ const LabList = ({
     window.clearTimeout(showToast._tid);
     showToast._tid = window.setTimeout(() => setToast(null), 3000);
   };
+
+  // Enrich labs with room names by fetching room data if missing
+  const enrichLabsWithRoomNames = useCallback(async (labsList) => {
+    console.log('🔄 Enriching labs with room names...');
+    console.log('   Input labs:', labsList.length);
+
+    // Find labs that have RoomId but no RoomName
+    const labsNeedingRoomData = labsList.filter(lab => {
+      const roomId = lab.roomId || lab.RoomId;
+      const roomName = lab.roomName || lab.RoomName || lab.room?.name || lab.room?.Name || lab.Room?.name || lab.Room?.Name;
+      return roomId && !roomName;
+    });
+
+    console.log('   Labs needing room data:', labsNeedingRoomData.length);
+
+    if (labsNeedingRoomData.length === 0) {
+      console.log('   ✅ No enrichment needed');
+      return labsList; // No need to fetch
+    }
+
+    // Get unique room IDs we need to fetch
+    const roomIdsToFetch = [...new Set(
+      labsNeedingRoomData
+        .map(lab => lab.roomId || lab.RoomId)
+        .filter(Boolean)
+        .filter(id => !roomsCache[id]) // Skip already cached
+    )];
+
+    console.log('   Room IDs to fetch:', roomIdsToFetch.length);
+    console.log('   Cached rooms:', Object.keys(roomsCache).length);
+
+    // Fetch missing rooms
+    const newRoomData = {};
+    let successCount = 0;
+    await Promise.all(
+      roomIdsToFetch.map(async (roomId) => {
+        try {
+          const room = await roomsApi.getRoomById(roomId);
+          newRoomData[roomId] = room;
+          successCount++;
+        } catch (err) {
+          console.warn(`   ⚠️ Failed to fetch room ${roomId}:`, err.message);
+          newRoomData[roomId] = null;
+        }
+      })
+    );
+
+    console.log('   ✅ Successfully fetched:', successCount, 'rooms');
+
+    // Update cache
+    if (Object.keys(newRoomData).length > 0) {
+      setRoomsCache(prev => ({ ...prev, ...newRoomData }));
+    }
+
+    // Merge room names into labs
+    return labsList.map(lab => {
+      const roomId = lab.roomId || lab.RoomId;
+      if (!roomId) return lab;
+
+      const existingRoomName = lab.roomName || lab.RoomName || lab.room?.name || lab.room?.Name || lab.Room?.name || lab.Room?.Name;
+      if (existingRoomName) return lab;
+
+      const roomData = newRoomData[roomId] || roomsCache[roomId];
+      if (roomData) {
+        return {
+          ...lab,
+          roomName: roomData.name || roomData.Name,
+          room: roomData
+        };
+      }
+
+      return lab;
+    });
+  }, [roomsCache]);
 
   // Handle initialToast prop
   useEffect(() => {
@@ -98,13 +173,22 @@ const LabList = ({
       // Try to get lab list first, handle other calls separately
       let labList;
       try {
-        labList = await labsApi.getLabs(cleanFilters);
+        // Use getAvailableLabs for student/lecturer, getLabs for admin
+        if (isAdmin) {
+          labList = await labsApi.getLabs(cleanFilters);
+        } else {
+          labList = await labsApi.getAvailableLabs();
+        }
       } catch (authErr) {
         // If 401, try to refresh token and retry once
         if (authErr.status === 401) {
           try {
             await authApi.refreshAuthToken();
-            labList = await labsApi.getLabs(cleanFilters);
+            if (isAdmin) {
+              labList = await labsApi.getLabs(cleanFilters);
+            } else {
+              labList = await labsApi.getAvailableLabs();
+            }
           } catch (refreshErr) {
             throw authErr; // Throw original error if refresh fails
           }
@@ -138,6 +222,7 @@ const LabList = ({
       }
 
       console.log('Lab API responses:', { labList, totalCount, availableCount });
+      console.log('Sample lab data:', labList && (Array.isArray(labList) ? labList[0] : labList.data?.[0] || labList.Data?.[0]));
 
       // Handle both array and paginated response formats
       let labData = [];
@@ -188,7 +273,10 @@ const LabList = ({
 
       console.log('Normalized counts:', { normalizedTotalCount, normalizedAvailableCount, derivedTotalCount, derivedTotalPages });
 
-      setLabs(labData);
+      // Enrich labs with room names if missing
+      const enrichedLabs = await enrichLabsWithRoomNames(labData);
+
+      setLabs(enrichedLabs);
       setTotalPages(derivedTotalPages);
       setTotalLabs(derivedTotalCount);
       setStats({ total: normalizedTotalCount, available: normalizedAvailableCount });
@@ -213,7 +301,7 @@ const LabList = ({
       setLoading(false);
       setPaginationLoading(false);
     }
-  }, [apiFilters, currentPage, pageSize]);
+  }, [apiFilters, currentPage, pageSize, enrichLabsWithRoomNames, isAdmin]);
 
   useEffect(() => {
     loadLabs();
@@ -522,20 +610,21 @@ const LabList = ({
             <table className="lab-table">
               <thead>
                 <tr>
-                  <th>ID</th>
+                  {isAdmin && <th>ID</th>}
                   <th className="col-name">Name</th>
                   <th className="col-location">Location</th>
+                  <th>Room</th>
                   <th>Capacity</th>
                   <th>Status</th>
                   <th>Equipment Count</th>
                   <th>Members</th>
-                  {isAdmin && <th>Actions</th>}
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {loading && !paginationLoading ? (
                   <tr>
-                    <td colSpan={isAdmin ? "8" : "7"} className="loading-cell">
+                    <td colSpan={isAdmin ? "9" : "8"} className="loading-cell">
                       <div className="loading-spinner"></div>
                       Loading labs...
                     </td>
@@ -544,35 +633,38 @@ const LabList = ({
                   // Show skeleton rows during pagination
                   Array.from({ length: pageSize }).map((_, index) => (
                     <tr key={`skeleton-${index}`} className="skeleton-row">
-                      <td><div className="skeleton-text"></div></td>
-                      <td><div className="skeleton-text"></div></td>
-                      <td><div className="skeleton-text"></div></td>
-                      <td><div className="skeleton-text"></div></td>
-                      <td><div className="skeleton-text"></div></td>
-                      <td><div className="skeleton-text"></div></td>
-                      <td><div className="skeleton-text"></div></td>
                       {isAdmin && <td><div className="skeleton-text"></div></td>}
+                      <td><div className="skeleton-text"></div></td>
+                      <td><div className="skeleton-text"></div></td>
+                      <td><div className="skeleton-text"></div></td>
+                      <td><div className="skeleton-text"></div></td>
+                      <td><div className="skeleton-text"></div></td>
+                      <td><div className="skeleton-text"></div></td>
+                      <td><div className="skeleton-text"></div></td>
+                      <td><div className="skeleton-text"></div></td>
                     </tr>
                   ))
                 ) : labs.length === 0 ? (
                   <tr>
-                    <td colSpan={isAdmin ? "8" : "7"} className="no-data">
+                    <td colSpan={isAdmin ? "9" : "8"} className="no-data">
                       No lab data
                     </td>
                   </tr>
                 ) : (
                   labs.map((lab) => (
                     <tr key={lab.id} className={lab.isOptimistic ? 'optimistic-row' : ''}>
-                      <td>
-                        {lab.id?.substring(0, 8)}...
-                        {lab.isOptimistic && (
-                          <span className="optimistic-indicator" title="Saving...">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M21 12a9 9 0 11-6.219-8.56"/>
-                            </svg>
-                          </span>
-                        )}
-                      </td>
+                      {isAdmin && (
+                        <td>
+                          {lab.id?.substring(0, 8)}...
+                          {lab.isOptimistic && (
+                            <span className="optimistic-indicator" title="Saving...">
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M21 12a9 9 0 11-6.219-8.56"/>
+                              </svg>
+                            </span>
+                          )}
+                        </td>
+                      )}
                       <td className="col-name">
                         <div>
                           <strong>{lab.name}</strong>
@@ -582,6 +674,15 @@ const LabList = ({
                         </div>
                       </td>
                       <td className="col-location">{lab.location || 'N/A'}</td>
+                      <td>
+                        {(lab.roomName || lab.RoomName || lab.room?.name || lab.room?.Name || lab.Room?.Name || lab.Room?.name) ? (
+                          <div>
+                            <strong>{lab.roomName || lab.RoomName || lab.room?.name || lab.room?.Name || lab.Room?.Name || lab.Room?.name}</strong>
+                          </div>
+                        ) : (
+                          <span className="text-muted">No Room</span>
+                        )}
+                      </td>
                       <td>{lab.capacity}</td>
                       <td>
                         <span className={getStatusBadgeClass(lab.status)}>
@@ -590,67 +691,72 @@ const LabList = ({
                       </td>
                       <td>{lab.equipmentCount || 0}</td>
                       <td>{lab.memberCount || 0}</td>
-                      {isAdmin && (
-                        <td>
-                          <div className="action-buttons">
-                            <button
-                              className="btn btn-sm btn-icon btn-icon-outline color-yellow"
-                              onClick={() => {
-                                if (onViewLab) {
-                                  onViewLab(lab.id);
-                                }
-                              }}
-                              disabled={actionLoading}
-                              aria-label="View details"
-                              title="View"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/>
-                                <circle cx="12" cy="12" r="3"/>
-                              </svg>
-                            </button>
-                            <button
-                              className="btn btn-sm btn-icon btn-icon-outline color-blue"
-                              onClick={() => openEditPage(lab)}
-                              disabled={actionLoading}
-                              aria-label="Edit lab"
-                              title="Edit"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M12 20h9"/>
-                                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/>
-                              </svg>
-                            </button>
-                            <button
-                              className="btn btn-sm btn-icon btn-icon-outline color-purple"
-                              onClick={() => openStatusModal(lab)}
-                              disabled={actionLoading}
-                              aria-label="Update status"
-                              title="Update Status"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M9 12l2 2 4-4"/>
-                                <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/>
-                              </svg>
-                            </button>
-                            <button
-                              className="btn btn-sm btn-icon btn-icon-outline color-red"
-                              onClick={() => setConfirmDeleteLab(lab)}
-                              disabled={actionLoading}
-                              aria-label="Delete lab"
-                              title="Delete"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <polyline points="3 6 5 6 21 6"/>
-                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
-                                <path d="M10 11v6"/>
-                                <path d="M14 11v6"/>
-                                <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>
-                              </svg>
-                            </button>
-                          </div>
-                        </td>
-                      )}
+                      <td>
+                        <div className="action-buttons">
+                          {/* View button - visible for all roles */}
+                          <button
+                            className="btn btn-sm btn-icon btn-icon-outline color-yellow"
+                            onClick={() => {
+                              if (onViewLab) {
+                                onViewLab(lab.id);
+                              }
+                            }}
+                            disabled={actionLoading}
+                            aria-label="View details"
+                            title="View Lab Details"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/>
+                              <circle cx="12" cy="12" r="3"/>
+                            </svg>
+                          </button>
+                          
+                          {/* Admin-only buttons */}
+                          {isAdmin && (
+                            <>
+                              <button
+                                className="btn btn-sm btn-icon btn-icon-outline color-blue"
+                                onClick={() => openEditPage(lab)}
+                                disabled={actionLoading}
+                                aria-label="Edit lab"
+                                title="Edit"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M12 20h9"/>
+                                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+                                </svg>
+                              </button>
+                              <button
+                                className="btn btn-sm btn-icon btn-icon-outline color-purple"
+                                onClick={() => openStatusModal(lab)}
+                                disabled={actionLoading}
+                                aria-label="Update status"
+                                title="Update Status"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M9 12l2 2 4-4"/>
+                                  <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/>
+                                </svg>
+                              </button>
+                              <button
+                                className="btn btn-sm btn-icon btn-icon-outline color-red"
+                                onClick={() => setConfirmDeleteLab(lab)}
+                                disabled={actionLoading}
+                                aria-label="Delete lab"
+                                title="Delete"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <polyline points="3 6 5 6 21 6"/>
+                                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+                                  <path d="M10 11v6"/>
+                                  <path d="M14 11v6"/>
+                                  <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>
+                                </svg>
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   ))
                 )}

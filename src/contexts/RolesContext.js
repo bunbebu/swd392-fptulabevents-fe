@@ -18,6 +18,15 @@ export const RolesProvider = ({ children }) => {
   const [lastFetch, setLastFetch] = useState(null);
 
   const fetchRoles = useCallback(async (forceRefresh = false) => {
+    // Check if user is authenticated before fetching roles
+    const token = localStorage.getItem('accessToken') || sessionStorage.getItem('accessToken');
+    if (!token) {
+      console.log('RolesContext - No token found, skipping roles fetch');
+      setLoading(false);
+      setRoles([]);
+      return [];
+    }
+
     // Cache for 5 minutes
     const CACHE_DURATION = 5 * 60 * 1000;
     const now = Date.now();
@@ -58,9 +67,10 @@ export const RolesProvider = ({ children }) => {
     } catch (error) {
       console.error('Error fetching roles:', error);
       
-      // Handle 401 error specifically
+      // Handle 401 error specifically - silently fail as user might not be admin
       if (error.status === 401) {
-        setError('Authentication expired. Please refresh the page and login again.');
+        console.log('RolesContext - Unauthorized access, returning empty roles');
+        setError(null); // Don't show error for 401
       } else {
         setError(error.message || 'Failed to load roles');
       }

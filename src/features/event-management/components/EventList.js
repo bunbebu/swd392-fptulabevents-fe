@@ -567,7 +567,7 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
             <table className="room-table">
               <thead>
                 <tr>
-                  <th>ID</th>
+                  {isAdmin && <th>ID</th>}
                   <th className="col-name">Title</th>
                   <th className="col-location">Location</th>
                   <th>Start Date</th>
@@ -581,7 +581,7 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
               <tbody>
                 {loading && !paginationLoading ? (
                   <tr>
-                    <td colSpan={isAdmin ? "9" : "8"} className="loading-cell">
+                    <td colSpan={isAdmin ? "9" : "7"} className="loading-cell">
                       <div className="loading-spinner"></div>
                       Loading events...
                     </td>
@@ -590,7 +590,7 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
                   // Show skeleton rows during pagination
                   Array.from({ length: pageSize }).map((_, index) => (
                     <tr key={`skeleton-${index}`} className="skeleton-row">
-                      <td><div className="skeleton-text"></div></td>
+                      {isAdmin && <td><div className="skeleton-text"></div></td>}
                       <td><div className="skeleton-text"></div></td>
                       <td><div className="skeleton-text"></div></td>
                       <td><div className="skeleton-text"></div></td>
@@ -603,14 +603,14 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
                   ))
                 ) : events.length === 0 ? (
                   <tr>
-                    <td colSpan={isAdmin ? "9" : "8"} className="no-data">
+                    <td colSpan={isAdmin ? "9" : "7"} className="no-data">
                       No event data
                     </td>
                   </tr>
                 ) : (
                   events.map((event) => (
                     <tr key={event.id}>
-                      <td>{event.id?.substring(0, 8)}...</td>
+                      {isAdmin && <td>{event.id?.substring(0, 8)}...</td>}
                       <td className="col-name">
                         <div>
                           <strong>{event.title}</strong>

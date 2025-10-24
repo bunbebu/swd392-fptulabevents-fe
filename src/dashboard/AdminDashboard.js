@@ -12,7 +12,7 @@ import { EventList, EventDetail } from '../features/event-management';
 import { BookingList, BookingDetail, CreateBooking } from '../features/booking-management';
 import { NotificationManagement } from '../features/notification-management';
 import { ReportManagement } from '../features/reports-management';
-import { authApi } from '../api';
+import { authApi, bookingApi } from '../api';
 
 const AdminDashboard = ({ user: userProp }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -33,6 +33,8 @@ const AdminDashboard = ({ user: userProp }) => {
   const [viewingBookingId, setViewingBookingId] = useState(null);
   const [creatingBooking, setCreatingBooking] = useState(false);
   const [bookingToast, setBookingToast] = useState(null);
+  const [recentBookings, setRecentBookings] = useState([]);
+  const [loadingBookings, setLoadingBookings] = useState(false);
   const userDropdownRef = useRef(null);
 
   // Helper function to generate avatar initials
@@ -63,6 +65,32 @@ const AdminDashboard = ({ user: userProp }) => {
       }
     }
   }, [user]);
+
+  // Load recent bookings for dashboard
+  useEffect(() => {
+    const loadRecentBookings = async () => {
+      if (activeTab !== 'dashboard') return;
+
+      setLoadingBookings(true);
+      try {
+        // Get recent 5 bookings (page 0, pageSize 5)
+        const bookings = await bookingApi.getBookings({
+          page: 1, // Frontend uses 1-based, will be converted to 0-based in API
+          pageSize: 5
+        });
+
+        if (Array.isArray(bookings)) {
+          setRecentBookings(bookings);
+        }
+      } catch (error) {
+        console.error('Error loading recent bookings:', error);
+      } finally {
+        setLoadingBookings(false);
+      }
+    };
+
+    loadRecentBookings();
+  }, [activeTab]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -357,6 +385,7 @@ const AdminDashboard = ({ user: userProp }) => {
               <LabDetail
                 labId={viewingLabId}
                 onNavigateBack={() => setViewingLabId(null)}
+                isAdmin={true}
               />
             </div>
           );
@@ -443,13 +472,33 @@ const AdminDashboard = ({ user: userProp }) => {
   };
 
   const renderDashboard = () => {
-    const recentBookings = [
-      { id: 1, name: 'John Doe', email: 'john@fpt.edu.vn', date: '9/27/2025', status: 'Active' },
-      { id: 2, name: 'Jane Smith', email: 'jane@fpt.edu.vn', date: '9/26/2025', status: 'Active' },
-      { id: 3, name: 'Mike Johnson', email: 'mike@fpt.edu.vn', date: '9/25/2025', status: 'Pending' },
-      { id: 4, name: 'Sarah Wilson', email: 'sarah@fpt.edu.vn', date: '9/24/2025', status: 'Active' },
-      { id: 5, name: 'David Brown', email: 'david@fpt.edu.vn', date: '9/23/2025', status: 'Active' }
-    ];
+    // Helper function to format date
+    const formatDate = (dateString) => {
+      if (!dateString) return 'N/A';
+      try {
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return 'N/A';
+        return date.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric'
+        });
+      } catch {
+        return 'N/A';
+      }
+    };
+
+    // Helper function to get status label and class
+    const getStatusInfo = (status) => {
+      const statusMap = {
+        0: { label: 'Pending', class: 'pending' },
+        1: { label: 'Approved', class: 'active' },
+        2: { label: 'Rejected', class: 'rejected' },
+        3: { label: 'Cancelled', class: 'cancelled' },
+        4: { label: 'Completed', class: 'completed' }
+      };
+      return statusMap[status] || { label: 'Unknown', class: 'unknown' };
+    };
 
     return (
       <div className="dashboard-overview">
@@ -621,34 +670,56 @@ const AdminDashboard = ({ user: userProp }) => {
               <button className="view-all-btn" onClick={() => setActiveTab('bookings')}>View All</button>
             </div>
           </div>
-          
+
           <div className="recent-content">
-            <div className="bookings-list">
-              {recentBookings.map(booking => (
-                <div key={booking.id} className="booking-card">
-                  <div className="booking-info">
-                    <div className="booking-icon">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
-                        <path d="M16 3.128a4 4 0 0 1 0 7.744"></path>
-                        <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
-                        <circle cx="9" cy="7" r="4"></circle>
-                      </svg>
+            {loadingBookings ? (
+              <div className="loading" style={{ padding: '40px', textAlign: 'center' }}>
+                <div className="loading-spinner"></div>
+                Loading recent bookings...
+              </div>
+            ) : recentBookings.length === 0 ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: '#6b7280' }}>
+                No bookings found
+              </div>
+            ) : (
+              <div className="bookings-list">
+                {recentBookings.map(booking => {
+                  const statusInfo = getStatusInfo(booking.status);
+                  return (
+                    <div
+                      key={booking.id}
+                      className="booking-card"
+                      onClick={() => {
+                        setViewingBookingId(booking.id);
+                        setActiveTab('bookings');
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <div className="booking-info">
+                        <div className="booking-icon">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M8 2v4"></path>
+                            <path d="M16 2v4"></path>
+                            <rect width="18" height="18" x="3" y="4" rx="2"></rect>
+                            <path d="M3 10h18"></path>
+                          </svg>
+                        </div>
+                        <div className="booking-details">
+                          <h4>{booking.roomName || 'Unknown Room'}</h4>
+                          <p>{booking.userName || 'Unknown User'}</p>
+                        </div>
+                      </div>
+                      <div className="booking-meta">
+                        <p className="booking-date">{formatDate(booking.startTime)}</p>
+                        <span className={`status-badge ${statusInfo.class}`}>
+                          {statusInfo.label}
+                        </span>
+                      </div>
                     </div>
-                    <div className="booking-details">
-                      <h4>{booking.name}</h4>
-                      <p>{booking.email}</p>
-                    </div>
-                  </div>
-                  <div className="booking-meta">
-                    <p className="booking-date">{booking.date}</p>
-                    <span className={`status-badge ${booking.status.toLowerCase()}`}>
-                      {booking.status}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>
