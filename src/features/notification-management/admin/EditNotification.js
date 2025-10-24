@@ -86,13 +86,19 @@ const EditNotification = ({ notification, onNavigateBack, onSuccess }) => {
     try {
       setLoading(true);
 
+      // Convert datetime-local format to ISO 8601 format
+      const startDate = new Date(formData.startDate).toISOString();
+      const endDate = new Date(formData.endDate).toISOString();
+
       const submitData = {
         title: formData.title.trim(),
         content: formData.content.trim(),
         targetGroup: formData.targetGroup,
-        startDate: formData.startDate,
-        endDate: formData.endDate
+        startDate: startDate,
+        endDate: endDate
       };
+
+      console.log('Submitting notification update:', submitData);
 
       await notificationApi.updateNotification(notification.id, submitData);
 
@@ -104,7 +110,9 @@ const EditNotification = ({ notification, onNavigateBack, onSuccess }) => {
       }
     } catch (err) {
       console.error('Failed to update notification:', err);
-      setErrors({ submit: err.message || 'Failed to update notification' });
+      // Display more detailed error message
+      const errorMessage = err.response?.data?.message || err.message || 'Failed to update notification';
+      setErrors({ submit: errorMessage });
     } finally {
       setLoading(false);
     }

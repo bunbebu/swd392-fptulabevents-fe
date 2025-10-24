@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { notificationApi, authApi } from '../../../api';
 import CreateNotification from './CreateNotification';
 import EditNotification from './EditNotification';
+import NotificationDetail from '../components/NotificationDetail';
 
 /**
  * Notification Management Component - Admin Only
@@ -25,7 +26,7 @@ const NotificationManagement = ({ userRole = 'Admin', onSelectNotification, onVi
   // Modal states
   const [showCreatePage, setShowCreatePage] = useState(false);
   const [showEditPage, setShowEditPage] = useState(false);
-  const [showViewModal, setShowViewModal] = useState(false);
+  const [showViewPage, setShowViewPage] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState(null);
   const [confirmDeleteNotification, setConfirmDeleteNotification] = useState(null);
   // eslint-disable-next-line no-unused-vars
@@ -50,7 +51,7 @@ const NotificationManagement = ({ userRole = 'Admin', onSelectNotification, onVi
   };
 
   // Load notification data with pagination
-  const loadNotifications = useCallback(async (page = currentPage, isPagination = false) => {
+  const loadNotifications = useCallback(async (page, isPagination = false) => {
     try {
       // Only show main loading on initial load, not on pagination
       if (isPagination) {
@@ -74,7 +75,7 @@ const NotificationManagement = ({ userRole = 'Admin', onSelectNotification, onVi
         )
       );
 
-      // Try to get notification list first, handle other calls separately
+      // Get notification list from backend
       let notificationList;
       try {
         notificationList = await notificationApi.getAllNotifications(cleanFilters);
@@ -91,99 +92,44 @@ const NotificationManagement = ({ userRole = 'Admin', onSelectNotification, onVi
           throw authErr;
         }
       }
-      
-      // Get counts separately with error handling
-      let totalCount = 0;
-      let activeCount = 0;
-      let expiredCount = 0;
-      
-      try {
-        totalCount = await notificationApi.getNotificationCount();
-      } catch (countErr) {
-        console.warn('Failed to get total count:', countErr);
-        // Fallback: count from notification list if it's an array
-        if (Array.isArray(notificationList)) {
-          totalCount = notificationList.length;
-        }
-      }
-      
-      try {
-        activeCount = await notificationApi.getActiveNotificationCount();
-      } catch (activeErr) {
-        console.warn('Failed to get active count:', activeErr);
-        // Fallback: count active notifications from list
-        if (Array.isArray(notificationList)) {
-          activeCount = notificationList.filter(notif => notif.status === 'Active').length;
-        }
-      }
-      
-      try {
-        expiredCount = await notificationApi.getExpiredNotificationCount();
-      } catch (expiredErr) {
-        console.warn('Failed to get expired count:', expiredErr);
-        // Fallback: count expired notifications from list
-        if (Array.isArray(notificationList)) {
-          expiredCount = notificationList.filter(notif => notif.status === 'Expired').length;
-        }
-      }
 
-      console.log('Notification API responses:', { notificationList, totalCount, activeCount, expiredCount });
+      console.log('Notification API response:', notificationList);
 
-      // Handle both array and paginated response formats
+      // Backend returns a simple array (IReadOnlyList<NotificationListItem>)
+      // It doesn't provide total count or pagination metadata
       let notificationData = [];
-      // eslint-disable-next-line no-unused-vars
-      let totalPagesFromApi = 1;
-      let totalCountFromApi = 0;
-      const serverPaginatedRequested = filters.page !== undefined || filters.pageSize !== undefined;
 
       if (Array.isArray(notificationList)) {
-        // If backend is already paginating (we sent Page/PageSize), do NOT slice again
-        if (serverPaginatedRequested) {
-          notificationData = notificationList;
-          // We'll compute total pages from the count endpoint below
-          totalCountFromApi = notificationList.length;
-          totalPagesFromApi = 1; // temporary; will be overridden by derived calculation
-        } else {
-          // Backend ignored pagination; do client-side pagination
-          notificationData = notificationList;
-          totalCountFromApi = notificationList.length;
-          totalPagesFromApi = Math.max(1, Math.ceil(totalCountFromApi / pageSize));
-          const start = (page - 1) * pageSize;
-          const end = start + pageSize;
-          notificationData = notificationList.slice(start, end);
-        }
-      } else if (notificationList?.data && Array.isArray(notificationList.data)) {
-        notificationData = notificationList.data;
-        totalPagesFromApi = notificationList.totalPages || 1;
-        totalCountFromApi = notificationList.totalCount || notificationList.data.length;
+        notificationData = notificationList;
       } else if (notificationList?.Data && Array.isArray(notificationList.Data)) {
+        // Handle C# response format with Data wrapper
         notificationData = notificationList.Data;
-        // eslint-disable-next-line no-unused-vars
-        totalPagesFromApi = notificationList.TotalPages || 1;
-        totalCountFromApi = notificationList.TotalCount || notificationList.Data.length;
+      } else if (notificationList?.data && Array.isArray(notificationList.data)) {
+        // Handle lowercase data wrapper
+        notificationData = notificationList.data;
       }
 
-      // Ensure counts are numbers
-      const normalizedTotalCount = typeof totalCount === 'number' ? totalCount : 
-        (totalCount?.count || totalCount?.Count || 0);
-      const normalizedActiveCount = typeof activeCount === 'number' ? activeCount : 
-        (activeCount?.activeCount || activeCount?.ActiveCount || 0);
-      const normalizedExpiredCount = typeof expiredCount === 'number' ? expiredCount : 
-        (expiredCount?.expiredCount || expiredCount?.ExpiredCount || 0);
+      // Determine if there are more pages based on the result count
+      // If we get exactly pageSize items, there might be more pages
+      // If we get less than pageSize, this is the last page
+      const hasMorePages = notificationData.length === pageSize;
 
-      // Determine if any filters (besides pagination) are applied
-      const hasNonPagingFilters = !!(filters.title || filters.content || filters.status !== '' || filters.targetGroup !== '');
-
-      // Prefer backend total count when no non-paging filters are applied
-      const derivedTotalCount = (!hasNonPagingFilters && normalizedTotalCount) ? normalizedTotalCount : totalCountFromApi;
-      const derivedTotalPages = Math.max(1, Math.ceil((derivedTotalCount || 0) / pageSize));
-
-      console.log('Normalized counts:', { normalizedTotalCount, normalizedActiveCount, normalizedExpiredCount, derivedTotalCount, derivedTotalPages });
+      console.log('Pagination info:', {
+        page,
+        pageSize,
+        resultsCount: notificationData.length,
+        hasMorePages
+      });
 
       setNotifications(notificationData);
-      setTotalPages(derivedTotalPages);
-      setTotalNotifications(derivedTotalCount);
-      setStats({ total: normalizedTotalCount, active: normalizedActiveCount, expired: normalizedExpiredCount });
+      // Store whether there are more pages for the Next button
+      setTotalPages(hasMorePages ? page + 1 : page);
+      setTotalNotifications(page * pageSize); // Approximate count
+
+      // Calculate stats from the data we have
+      const activeCount = notificationData.filter(n => n.status === 'Active').length;
+      const expiredCount = notificationData.filter(n => n.status === 'Expired').length;
+      setStats({ total: notificationData.length, active: activeCount, expired: expiredCount });
     } catch (err) {
       console.error('Error loading notifications:', err);
       
@@ -205,17 +151,16 @@ const NotificationManagement = ({ userRole = 'Admin', onSelectNotification, onVi
       setLoading(false);
       setPaginationLoading(false);
     }
-  }, [apiFilters, currentPage, pageSize]);
+  }, [apiFilters, pageSize]);
 
   useEffect(() => {
-    loadNotifications();
-  }, [loadNotifications]);
+    loadNotifications(currentPage, currentPage !== 1);
+  }, [loadNotifications, currentPage]);
 
   // Pagination handler
   const handlePageChange = (newPage) => {
-    if (newPage >= 1 && newPage <= totalPages) {
+    if (newPage >= 1 && newPage <= totalPages && !paginationLoading) {
       setCurrentPage(newPage);
-      loadNotifications(newPage, true);
     }
   };
 
@@ -223,14 +168,16 @@ const NotificationManagement = ({ userRole = 'Admin', onSelectNotification, onVi
   const handleCreateNotificationSuccess = async () => {
     setShowCreatePage(false);
     showToast('Notification created successfully!', 'success');
-    await loadNotifications(currentPage);
+    // Reset to page 1 when creating new notification
+    setCurrentPage(1);
   };
 
   const handleEditNotificationSuccess = async () => {
     setShowEditPage(false);
     setSelectedNotification(null);
       showToast('Notification updated successfully!', 'success');
-    await loadNotifications(currentPage);
+    // Reload current page
+    await loadNotifications(currentPage, false);
   };
 
   const handleDeleteNotification = async (notificationId) => {
@@ -261,7 +208,7 @@ const NotificationManagement = ({ userRole = 'Admin', onSelectNotification, onVi
   // Handle view notification details
   const handleView = async (notification) => {
     setSelectedNotification(notification);
-    setShowViewModal(true);
+    setShowViewPage(true);
   };
 
   // Apply filters
@@ -327,6 +274,11 @@ const NotificationManagement = ({ userRole = 'Admin', onSelectNotification, onVi
           setShowEditPage(false);
           setSelectedNotification(null);
         }} onSuccess={handleEditNotificationSuccess} />
+      ) : showViewPage ? (
+        <NotificationDetail notificationId={selectedNotification?.id} onNavigateBack={() => {
+          setShowViewPage(false);
+          setSelectedNotification(null);
+        }} />
       ) : (
         <>
           <div className="notification-list-header">
@@ -411,8 +363,8 @@ const NotificationManagement = ({ userRole = 'Admin', onSelectNotification, onVi
           )}
 
       <div className="notification-list-stats">
-            <span>Total notifications: {totalNotifications}</span>
-            <span>Page {currentPage} / {totalPages}</span>
+            <span>Showing {notifications.length} notifications</span>
+            <span>Page {currentPage}</span>
       </div>
 
       {/* Filter Controls */}
@@ -644,7 +596,7 @@ const NotificationManagement = ({ userRole = 'Admin', onSelectNotification, onVi
               )}
             </button>
             <span className="page-info">
-              Page {currentPage} / {totalPages}
+              Page {currentPage}
               {paginationLoading && (
                 <span className="pagination-loading-indicator">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="spinning">
@@ -656,7 +608,7 @@ const NotificationManagement = ({ userRole = 'Admin', onSelectNotification, onVi
             <button
               className="btn btn-secondary"
               onClick={() => handlePageChange(currentPage + 1)}
-              disabled={currentPage === totalPages || actionLoading || paginationLoading}
+              disabled={currentPage >= totalPages || notifications.length < pageSize || actionLoading || paginationLoading}
             >
               {paginationLoading && currentPage < totalPages ? (
                 <>
@@ -676,62 +628,6 @@ const NotificationManagement = ({ userRole = 'Admin', onSelectNotification, onVi
       )}
 
       {/* Modals */}
-
-      {/* View Modal */}
-      {showViewModal && selectedNotification && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <div className="modal-header">
-              <h3>Notification Details</h3>
-            </div>
-            <div className="modal-body">
-              <div className="detail-grid">
-                <div className="detail-item full-width">
-                  <label>Title:</label>
-                  <span><strong>{selectedNotification.title}</strong></span>
-                </div>
-                <div className="detail-item full-width">
-                  <label>Content:</label>
-                  <span style={{ whiteSpace: 'pre-wrap' }}>{selectedNotification.content}</span>
-                </div>
-                <div className="detail-item">
-                  <label>Target Group:</label>
-                  <span>{selectedNotification.targetGroup}</span>
-                </div>
-                <div className="detail-item">
-                  <label>Status:</label>
-                  <StatusBadge status={selectedNotification.status} />
-                </div>
-                <div className="detail-item">
-                  <label>Start Date:</label>
-                  <span>{formatDate(selectedNotification.startDate)}</span>
-                </div>
-                <div className="detail-item">
-                  <label>End Date:</label>
-                  <span>{formatDate(selectedNotification.endDate)}</span>
-                </div>
-                <div className="detail-item">
-                  <label>Created By:</label>
-                  <span>{selectedNotification.createdBy || 'Admin'}</span>
-                </div>
-                <div className="detail-item">
-                  <label>Created At:</label>
-                  <span>{formatDate(selectedNotification.createdAt)}</span>
-                </div>
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button 
-                className="btn btn-secondary" 
-                onClick={() => setShowViewModal(false)}
-                disabled={actionLoading}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Delete Confirmation Modal */}
       {confirmDeleteNotification && (

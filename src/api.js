@@ -1024,12 +1024,19 @@ export async function updateEvent(id, eventData) {
  * @returns {Promise<Object>} Deletion result
  */
 export async function deleteEvent(id, confirmDeletion = true) {
-  // Use query parameter instead of body for DELETE requests
-  const params = new URLSearchParams();
-  params.append('confirmDeletion', confirmDeletion.toString());
+  // Backend requires a non-empty request body for DELETE
+  const url = `/api/events/${id}`;
 
-  return await request(`/api/events/${id}?${params.toString()}`, {
-    method: 'DELETE'
+  // Send confirmDeletion in body instead of query parameter
+  const body = {
+    confirmDeletion: confirmDeletion
+  };
+
+  console.log('Deleting event:', { id, url, body });
+
+  return await request(url, {
+    method: 'DELETE',
+    body: JSON.stringify(body)
   });
 }
 
@@ -1045,7 +1052,7 @@ export async function deleteEvent(id, confirmDeletion = true) {
  * @param {string} filters.status - Status filter (Active, Expired, Scheduled)
  * @param {string} filters.startDate - Start date filter
  * @param {string} filters.endDate - End date filter
- * @param {number} filters.page - Page number
+ * @param {number} filters.page - Page number (1-based in frontend, converted to 0-based for backend)
  * @param {number} filters.pageSize - Items per page
  * @returns {Promise<Array>} List of notifications
  */
@@ -1056,7 +1063,8 @@ export async function getAllNotifications(filters = {}) {
   if (filters.status) params.append('Status', filters.status);
   if (filters.startDate) params.append('StartDate', filters.startDate);
   if (filters.endDate) params.append('EndDate', filters.endDate);
-  if (filters.page) params.append('Page', String(filters.page));
+  // Backend expects 0-based page index, but frontend uses 1-based
+  if (filters.page) params.append('Page', String(filters.page - 1));
   if (filters.pageSize) params.append('PageSize', String(filters.pageSize));
 
   const queryString = params.toString();

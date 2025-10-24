@@ -235,30 +235,83 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
     setTotalEvents(prev => prev - 1);
 
     try {
+      console.log('Attempting to delete event:', eventId);
       await eventApi.deleteEvent(eventId, true);
       setConfirmDeleteEvent(null);
       showToast('Event deleted successfully!', 'success');
-      
+
       // Reload events to ensure consistency
       await loadEvents(currentPage);
     } catch (err) {
       // Restore event on error
       setEvents(prev => [...prev, eventToDelete]);
       setTotalEvents(prev => prev + 1);
-      
+
       // Show specific error message
-      console.error('Delete error:', err);
+      console.error('Delete error full object:', err);
+      console.error('Error status:', err.status);
+      console.error('Error message:', err.message);
+      console.error('Error data:', err.data);
+      console.error('Error details:', err.details);
+
       let errorMessage = 'Failed to delete event';
-      
-      if (err.message) {
-        errorMessage = err.message;
-        
-        // Check for database constraint errors
-        if (err.message.includes('entity changes') || err.message.includes('foreign key') || err.message.includes('constraint')) {
-          errorMessage = 'Cannot delete event: This event has bookings or other related data. Please remove all bookings first.';
+
+      // Check for validation errors from backend
+      if (err.data?.errors || err.details) {
+        const errors = err.data?.errors || err.details;
+        console.log('Parsing validation errors:', errors);
+
+        // Extract error messages from validation errors
+        const errorMessages = [];
+
+        if (typeof errors === 'object') {
+          Object.keys(errors).forEach(key => {
+            const messages = errors[key];
+            if (Array.isArray(messages)) {
+              errorMessages.push(...messages);
+            } else if (typeof messages === 'string') {
+              errorMessages.push(messages);
+            }
+          });
         }
+
+        if (errorMessages.length > 0) {
+          // Use the first error message
+          errorMessage = errorMessages[0];
+          console.log('Extracted error message:', errorMessage);
+        }
+      }
+
+      // Check err.data for backend message
+      if (!errorMessage || errorMessage === 'Failed to delete event') {
+        if (err.data?.title) {
+          errorMessage = err.data.title;
+        } else if (err.data?.Message || err.data?.message) {
+          errorMessage = err.data.Message || err.data.message;
+        } else if (err.message && err.message !== 'Request failed (400)') {
+          errorMessage = err.message;
+        }
+      }
+
+      // Check for specific error patterns and provide user-friendly messages
+      if (
+        errorMessage.includes('entity changes') ||
+        errorMessage.includes('foreign key') ||
+        errorMessage.includes('constraint') ||
+        errorMessage.includes('booking') ||
+        errorMessage.includes('related data')
+      ) {
+        errorMessage = 'Cannot delete event: This event has related data that must be removed first. This may include:\n• Bookings\n• Notifications\n• Reports\n• Other linked records\n\nPlease check and remove all dependencies through their respective management pages before deleting this event.';
+      } else if (errorMessage.includes('validation error')) {
+        // Keep validation error as is
+        errorMessage = `Cannot delete event: ${errorMessage}`;
       } else if (err.status === 400) {
-        errorMessage = 'Cannot delete event with active bookings. Please cancel or reject the bookings first.';
+        // For generic 400, add helpful prefix
+        if (errorMessage === 'Failed to delete event' || errorMessage.includes('Request failed')) {
+          errorMessage = 'Cannot delete event: The server rejected this request. This event may have related data that needs to be removed first.';
+        } else if (!errorMessage.includes('Cannot delete')) {
+          errorMessage = `Cannot delete event: ${errorMessage}`;
+        }
       } else if (err.status === 404) {
         errorMessage = 'Event not found';
       } else if (err.status === 401) {
@@ -266,8 +319,9 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
       } else if (err.status === 403) {
         errorMessage = 'You do not have permission to delete this event';
       }
-      
+
       showToast(errorMessage, 'error');
+      setConfirmDeleteEvent(null); // Close modal on error
     } finally {
       setActionLoading(false);
     }
@@ -689,6 +743,37 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
             </div>
             <div className="modal-body">
               <p>Are you sure you want to delete event <strong>{normalizeEvent(confirmDeleteEvent).title}</strong>?</p>
+
+              {/* Warning for any potential dependencies */}
+              <div style={{
+                padding: '12px',
+                backgroundColor: '#FEF3C7',
+                border: '1px solid #F59E0B',
+                borderRadius: '6px',
+                marginTop: '12px',
+                marginBottom: '8px'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: '2px' }}>
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                    <line x1="12" y1="9" x2="12" y2="13"></line>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                  </svg>
+                  <div style={{ flex: 1 }}>
+                    <strong style={{ color: '#92400E', display: 'block', marginBottom: '4px' }}>Important Notice</strong>
+                    {confirmDeleteEvent.bookingCount > 0 ? (
+                      <p style={{ color: '#92400E', fontSize: '14px', margin: 0 }}>
+                        This event has <strong>{confirmDeleteEvent.bookingCount} booking(s)</strong>. You must cancel or delete all bookings before deleting this event.
+                      </p>
+                    ) : (
+                      <p style={{ color: '#92400E', fontSize: '14px', margin: 0 }}>
+                        This event may have related data (notifications, reports, or other records). If deletion fails, you may need to remove these dependencies first through their respective management pages.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <p className="text-muted small">This action cannot be undone.</p>
             </div>
             <div className="modal-footer">
@@ -699,13 +784,24 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
               >
                 Cancel
               </button>
-              <button
-                className="btn btn-danger"
-                onClick={() => handleDeleteEvent(confirmDeleteEvent.id || confirmDeleteEvent.Id)}
-                disabled={actionLoading}
-              >
-                {actionLoading ? 'Deleting...' : 'Delete'}
-              </button>
+              {confirmDeleteEvent.bookingCount > 0 ? (
+                <button
+                  className="btn btn-danger"
+                  disabled={true}
+                  title="Cannot delete event with existing bookings"
+                  style={{ cursor: 'not-allowed', opacity: 0.5 }}
+                >
+                  Cannot Delete (Has Bookings)
+                </button>
+              ) : (
+                <button
+                  className="btn btn-danger"
+                  onClick={() => handleDeleteEvent(confirmDeleteEvent.id || confirmDeleteEvent.Id)}
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? 'Deleting...' : 'Delete'}
+                </button>
+              )}
             </div>
           </div>
         </div>

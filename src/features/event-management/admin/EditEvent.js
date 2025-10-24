@@ -133,8 +133,11 @@ const EditEvent = ({ event, eventId, onNavigateBack, onSuccess }) => {
       return;
     }
 
-    try {
-      setLoading(true);
+    const attemptUpdate = async (retryCount = 0) => {
+      const targetEventId = eventId || eventData?.id;
+      if (!targetEventId) {
+        throw new Error('Event ID is required');
+      }
 
       const submitData = {
         title: formData.title.trim(),
@@ -147,12 +150,33 @@ const EditEvent = ({ event, eventId, onNavigateBack, onSuccess }) => {
         recurrenceRule: formData.recurrenceRule.trim() || null
       };
 
-      const targetEventId = eventId || eventData?.id;
-      if (!targetEventId) {
-        throw new Error('Event ID is required');
-      }
+      console.log(`Submitting event update (attempt ${retryCount + 1}):`, { targetEventId, submitData });
 
-      await eventApi.updateEvent(targetEventId, submitData);
+      try {
+        await eventApi.updateEvent(targetEventId, submitData);
+        return true; // Success
+      } catch (err) {
+        // Check if it's a concurrency/entity error and we haven't retried yet
+        const isConcurrencyError =
+          err.message?.includes('entity changes') ||
+          err.message?.includes('concurrency') ||
+          err.data?.Message?.includes('entity changes') ||
+          err.data?.message?.includes('entity changes');
+
+        if (isConcurrencyError && retryCount < 2) {
+          console.log(`Concurrency error detected, retrying... (attempt ${retryCount + 2})`);
+          // Wait a bit before retrying
+          await new Promise(resolve => setTimeout(resolve, 300));
+          return attemptUpdate(retryCount + 1);
+        }
+
+        throw err; // Re-throw if not concurrency error or out of retries
+      }
+    };
+
+    try {
+      setLoading(true);
+      await attemptUpdate();
 
       // Navigate back to event list with success message
       if (onSuccess) {
@@ -162,7 +186,24 @@ const EditEvent = ({ event, eventId, onNavigateBack, onSuccess }) => {
       }
     } catch (err) {
       console.error('Failed to update event:', err);
-      setErrors({ submit: err.message || 'Failed to update event' });
+      // Display more detailed error message
+      let errorMessage = 'Failed to update event';
+
+      if (err.data?.Message || err.data?.message) {
+        errorMessage = err.data.Message || err.data.message;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+
+      // Check for specific error details
+      if (err.details) {
+        console.error('Error details:', err.details);
+        if (typeof err.details === 'string') {
+          errorMessage += `: ${err.details}`;
+        }
+      }
+
+      setErrors({ submit: errorMessage });
     } finally {
       setLoading(false);
     }

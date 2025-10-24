@@ -95,6 +95,8 @@ const CreateEvent = ({ onNavigateBack, onSuccess }) => {
         recurrenceRule: formData.recurrenceRule.trim() || null
       };
 
+      console.log('Submitting event creation:', submitData);
+
       await eventApi.createEvent(submitData);
 
       // Navigate back to event list with success message
@@ -105,7 +107,24 @@ const CreateEvent = ({ onNavigateBack, onSuccess }) => {
       }
     } catch (err) {
       console.error('Failed to create event:', err);
-      setErrors({ submit: err.message || 'Failed to create event' });
+      // Display more detailed error message
+      let errorMessage = 'Failed to create event';
+
+      if (err.data?.Message || err.data?.message) {
+        errorMessage = err.data.Message || err.data.message;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+
+      // Check for specific error details
+      if (err.details) {
+        console.error('Error details:', err.details);
+        if (typeof err.details === 'string') {
+          errorMessage += `: ${err.details}`;
+        }
+      }
+
+      setErrors({ submit: errorMessage });
     } finally {
       setLoading(false);
     }

@@ -1,13 +1,36 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { notificationApi } from '../../../api';
 
 /**
  * Notification Detail Component
- * 
- * Displays detailed information about a notification
- * Can be used in both admin and user contexts
+ *
+ * Displays detailed information about a notification in a full page
+ * Similar to EquipmentDetail component
  */
-const NotificationDetail = ({ notification, onClose }) => {
-  if (!notification) return null;
+const NotificationDetail = ({ notificationId, onNavigateBack }) => {
+  const [notification, setNotification] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const loadNotificationDetail = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const detail = await notificationApi.getNotificationById(notificationId);
+      const data = (detail && (detail.data || detail.Data)) || detail;
+      setNotification(data);
+    } catch (err) {
+      console.error('Error loading notification details:', err);
+      setError(err.message || 'Failed to load notification details');
+    } finally {
+      setLoading(false);
+    }
+  }, [notificationId]);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    loadNotificationDetail();
+  }, [notificationId, loadNotificationDetail]);
 
   // Format date for display
   const formatDate = (dateString) => {
@@ -15,7 +38,7 @@ const NotificationDetail = ({ notification, onClose }) => {
     const date = new Date(dateString);
     return date.toLocaleString('en-US', {
       year: 'numeric',
-      month: 'long',
+      month: 'short',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
@@ -32,173 +55,160 @@ const NotificationDetail = ({ notification, onClose }) => {
     return <span className={statusStyles[status] || 'status-badge'}>{status}</span>;
   };
 
+  if (loading) {
+    return (
+      <div className="create-equipment-page">
+        <div className="page-header">
+          <div className="header-content">
+            <button
+              className="back-button"
+              onClick={onNavigateBack}
+              title="Back to Notification List"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 12H5"></path>
+                <path d="M12 19l-7-7 7-7"></path>
+              </svg>
+            </button>
+            <h1>Notification Details</h1>
+          </div>
+        </div>
+        <div className="page-content">
+          <div className="loading">Loading notification details...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="create-equipment-page">
+        <div className="page-header">
+          <div className="header-content">
+            <button
+              className="back-button"
+              onClick={onNavigateBack}
+              title="Back to Notification List"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 12H5"></path>
+                <path d="M12 19l-7-7 7-7"></path>
+              </svg>
+            </button>
+            <h1>Notification Details</h1>
+          </div>
+        </div>
+        <div className="page-content">
+          <div className="error-message">
+            {error}
+            <div className="error-actions">
+              <button onClick={loadNotificationDetail} className="btn btn-primary">
+                Retry
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!notification) {
+    return (
+      <div className="create-equipment-page">
+        <div className="page-header">
+          <div className="header-content">
+            <button
+              className="back-button"
+              onClick={onNavigateBack}
+              title="Back to Notification List"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 12H5"></path>
+                <path d="M12 19l-7-7 7-7"></path>
+              </svg>
+            </button>
+            <h1>Notification Details</h1>
+          </div>
+        </div>
+        <div className="page-content">
+          <div className="no-data">Notification not found</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="notification-detail-container">
-      <div className="notification-detail-header">
-        <div className="notification-detail-title">
-          <h2>{notification.title}</h2>
-          <StatusBadge status={notification.status} />
-        </div>
-        <div className="notification-detail-meta">
-          <span className="meta-item">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-              <circle cx="12" cy="7" r="4"></circle>
+    <div className="create-equipment-page">
+      <div className="page-header">
+        <div className="header-content">
+          <button
+            className="back-button"
+            onClick={onNavigateBack}
+            title="Back to Notification List"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 12H5"></path>
+              <path d="M12 19l-7-7 7-7"></path>
             </svg>
-            {notification.targetGroup}
-          </span>
-          <span className="meta-item">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="10"></circle>
-              <polyline points="12 6 12 12 16 14"></polyline>
-            </svg>
-            {formatDate(notification.createdAt)}
-          </span>
-        </div>
-      </div>
-
-      <div className="notification-detail-body">
-        <div className="notification-content-section">
-          <h3>Content</h3>
-          <div className="notification-content-text">
-            {notification.content}
-          </div>
-        </div>
-
-        <div className="notification-info-grid">
-          <div className="info-item">
-            <label>Start Date</label>
-            <span>{formatDate(notification.startDate)}</span>
-          </div>
-          <div className="info-item">
-            <label>End Date</label>
-            <span>{formatDate(notification.endDate)}</span>
-          </div>
-          {notification.createdBy && (
-            <div className="info-item">
-              <label>Created By</label>
-              <span>{notification.createdBy}</span>
-            </div>
-          )}
-          {notification.totalReaders !== undefined && (
-            <div className="info-item">
-              <label>Total Readers</label>
-              <span>{notification.totalReaders}</span>
-            </div>
-          )}
-          {notification.unreadCount !== undefined && (
-            <div className="info-item">
-              <label>Unread Count</label>
-              <span>{notification.unreadCount}</span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {onClose && (
-        <div className="notification-detail-footer">
-          <button className="btn-secondary" onClick={onClose}>
-            Close
           </button>
+          <h1>Notification Details</h1>
         </div>
-      )}
+      </div>
 
-      <style jsx>{`
-        .notification-detail-container {
-          background: white;
-          border-radius: 8px;
-          overflow: hidden;
-        }
-
-        .notification-detail-header {
-          padding: 24px;
-          border-bottom: 1px solid #e0e0e0;
-        }
-
-        .notification-detail-title {
-          display: flex;
-          align-items: center;
-          gap: 16px;
-          margin-bottom: 12px;
-        }
-
-        .notification-detail-title h2 {
-          margin: 0;
-          font-size: 24px;
-          font-weight: 600;
-          color: #333;
-        }
-
-        .notification-detail-meta {
-          display: flex;
-          align-items: center;
-          gap: 24px;
-          color: #666;
-          font-size: 14px;
-        }
-
-        .meta-item {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .notification-detail-body {
-          padding: 24px;
-        }
-
-        .notification-content-section {
-          margin-bottom: 24px;
-        }
-
-        .notification-content-section h3 {
-          margin: 0 0 12px 0;
-          font-size: 16px;
-          font-weight: 600;
-          color: #333;
-        }
-
-        .notification-content-text {
-          padding: 16px;
-          background: #f5f5f5;
-          border-radius: 8px;
-          white-space: pre-wrap;
-          line-height: 1.6;
-          color: #333;
-        }
-
-        .notification-info-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-          gap: 16px;
-        }
-
-        .info-item {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-
-        .info-item label {
-          font-size: 12px;
-          font-weight: 600;
-          color: #999;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-        }
-
-        .info-item span {
-          font-size: 14px;
-          color: #333;
-        }
-
-        .notification-detail-footer {
-          padding: 16px 24px;
-          border-top: 1px solid #e0e0e0;
-          display: flex;
-          justify-content: flex-end;
-        }
-      `}</style>
+      <div className="page-content">
+        <div className="room-detail-content">
+          <div className="detail-card">
+            <div className="detail-card-header">
+              <h3>{notification.title}</h3>
+              <StatusBadge status={notification.status} />
+            </div>
+            <div className="detail-grid">
+              <div className="detail-item full-width">
+                <label>Content:</label>
+                <span className="detail-value" style={{ whiteSpace: 'pre-wrap' }}>
+                  {notification.content}
+                </span>
+              </div>
+              <div className="detail-item">
+                <label>Target Group:</label>
+                <span className="detail-value">{notification.targetGroup}</span>
+              </div>
+              <div className="detail-item">
+                <label>Status:</label>
+                <span className="detail-value">{notification.status}</span>
+              </div>
+              <div className="detail-item">
+                <label>Start Date:</label>
+                <span className="detail-value">{formatDate(notification.startDate)}</span>
+              </div>
+              <div className="detail-item">
+                <label>End Date:</label>
+                <span className="detail-value">{formatDate(notification.endDate)}</span>
+              </div>
+              <div className="detail-item">
+                <label>Created By:</label>
+                <span className="detail-value">{notification.createdBy || 'Admin'}</span>
+              </div>
+              <div className="detail-item">
+                <label>Created At:</label>
+                <span className="detail-value">{formatDate(notification.createdAt)}</span>
+              </div>
+              {notification.totalReaders !== undefined && (
+                <div className="detail-item">
+                  <label>Total Readers:</label>
+                  <span className="detail-value">{notification.totalReaders}</span>
+                </div>
+              )}
+              {notification.unreadCount !== undefined && (
+                <div className="detail-item">
+                  <label>Unread Count:</label>
+                  <span className="detail-value">{notification.unreadCount}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
