@@ -1407,6 +1407,79 @@ export async function deleteLab(id, confirmDeletion = true) {
   });
 }
 
+// ============================================================================
+// LAB MEMBERS MANAGEMENT API
+// ============================================================================
+
+/**
+ * Get lab members by lab ID
+ * GET /api/labs/{labId}/members
+ * @param {string} labId - Lab UUID
+ * @returns {Promise<Array>} List of members in the lab
+ */
+export async function getLabMembers(labId) {
+  return await request(`/api/labs/${labId}/members`, { method: 'GET' });
+}
+
+/**
+ * Add member to lab
+ * POST /api/labs/{labId}/members
+ * @param {string} labId - Lab UUID
+ * @param {string} userId - User UUID to add as member
+ * @returns {Promise<Object>} Created lab member relationship
+ */
+export async function addLabMember(labId, userId) {
+  const payload = {
+    UserId: userId
+  };
+
+  return await request(`/api/labs/${labId}/members`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+/**
+ * Update lab member role/status
+ * PATCH /api/labs/{labId}/members/{id}
+ * @param {string} labId - Lab UUID
+ * @param {string} memberId - Member relationship UUID (not user ID)
+ * @param {Object} memberData - Member data to update
+ * @returns {Promise<Object>} Updated lab member
+ */
+export async function updateLabMember(labId, memberId, memberData) {
+  const payload = {};
+
+  if (memberData.role !== undefined) payload.Role = memberData.role;
+  if (memberData.status !== undefined) payload.Status = memberData.status;
+
+  return await request(`/api/labs/${labId}/members/${memberId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+/**
+ * Remove member from lab
+ * DELETE /api/labs/{labId}/members/{id}
+ * @param {string} labId - Lab UUID
+ * @param {string} memberId - Member relationship UUID (not user ID)
+ * @returns {Promise<Object>} Deletion result
+ */
+export async function removeLabMember(labId, memberId) {
+  return await request(`/api/labs/${labId}/members/${memberId}`, {
+    method: 'DELETE'
+  });
+}
+
+// Lab Members API
+export const labMembersApi = {
+  getLabMembers,
+  addLabMember,
+  updateLabMember,
+  removeLabMember
+};
+
 // Lab Management API
 export const labsApi = {
   getLabs,
@@ -1418,7 +1491,9 @@ export const labsApi = {
   createLab,
   updateLab,
   updateLabStatus,
-  deleteLab
+  deleteLab,
+  // Include lab members methods for convenience
+  members: labMembersApi
 };
 
 // Equipment Management API
@@ -1777,6 +1852,7 @@ const api = {
   auth: authApi,
   user: userApi,
   labs: labsApi,
+  labMembers: labMembersApi,
   equipment: equipmentApi,
   rooms: roomsApi,
   roles: rolesApi,

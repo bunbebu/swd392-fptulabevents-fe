@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { labsApi } from '../../../api';
+import LabMemberList from './LabMemberList';
 
 /**
  * Lab Detail Component
  * Displays detailed information about a specific lab on a separate page
+ * Includes integrated member management
  *
  * Related User Stories:
- * - US-09: Admin - Manage labs and equipment
+ * - US-09: Admin - Manage labs and equipment (includes lab member management)
  */
-const LabDetail = ({ labId, onNavigateBack }) => {
+const LabDetail = ({ labId, onNavigateBack, isAdmin = true }) => {
   const [lab, setLab] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -242,42 +244,10 @@ const LabDetail = ({ labId, onNavigateBack }) => {
           </div>
         )}
 
-        {/* Members List */}
-        {lab.members && lab.members.length > 0 && (
-          <div className="detail-card">
-            <div className="detail-card-header">
-              <h3>Lab Members ({lab.members.length})</h3>
-            </div>
-            <div className="bookings-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Role</th>
-                    <th>Status</th>
-                    <th>Joined At</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lab.members.map((member) => (
-                    <tr key={member.id}>
-                      <td>{member.userName}</td>
-                      <td>{member.userEmail}</td>
-                      <td>{member.role}</td>
-                      <td>
-                        <span className={`status-badge status-${member.status.toLowerCase()}`}>
-                          {member.status}
-                        </span>
-                      </td>
-                      <td>{formatDate(member.joinedAt)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+        {/* Members Management - Interactive Component */}
+        <div className="detail-card">
+          <LabMemberList labId={labId} isAdmin={isAdmin} />
+        </div>
 
         {/* Equipment List */}
         {lab.equipments && lab.equipments.length > 0 && (
