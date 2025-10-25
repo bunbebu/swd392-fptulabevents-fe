@@ -244,29 +244,29 @@ export async function register({ email, username, password, fullname, mssv }) {
 }
 
 // Google OAuth Functions
-export function getGoogleLoginUrl() {
+export async function getGoogleLoginUrl() {
   // GET /api/auth/google/start - Returns redirect URL to Google OAuth
-  // For OAuth redirect, we need the full backend URL (proxy doesn't work for window.location.href)
-  const backendUrl = process.env.REACT_APP_API_BASE_URL || 'http://swd392group6.runasp.net';
-  
   // Generate a random state parameter for CSRF protection
   const state = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-  
+
   // Store state in sessionStorage for validation later
   sessionStorage.setItem('google_oauth_state', state);
-  
+
   // Determine the redirect URI based on environment
   const currentOrigin = window.location.origin;
   // Use production redirect URI if available, otherwise use current origin
   const redirectUri = process.env.REACT_APP_GOOGLE_REDIRECT_URI || `${currentOrigin}/auth/google/callback`;
-  
+
   // Build the URL with required parameters
   const params = new URLSearchParams({
     state: state,
     redirectUri: redirectUri
   });
-  
-  return `${backendUrl}/api/auth/google/start?${params.toString()}`;
+
+  // Use proxy to call backend API (not direct HTTP URL)
+  return await request(`/api/auth/google/start?${params.toString()}`, {
+    method: 'GET'
+  });
 }
 
 export async function loginWithGoogleToken(googleToken) {
