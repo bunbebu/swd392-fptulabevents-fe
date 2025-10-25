@@ -50,6 +50,7 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
   });
 
   const isAdmin = userRole === 'Admin';
+  const canCreateEvent = isAdmin; // Only Admin can create events
 
   // Helper function to normalize event data (handle both Title/title)
   const normalizeEvent = (event) => {
@@ -405,7 +406,7 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
         }} onSuccess={handleEditEventSuccess} />
       ) : (
         <>
-          {isAdmin && (
+          {canCreateEvent && (
             <div className="room-list-header">
               <h2>Event Management</h2>
               <button

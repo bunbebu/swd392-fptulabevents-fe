@@ -2,7 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { EventList, EventDetail } from '../features/event-management';
 import { EditEvent } from '../features/event-management/admin';
 import { LabList } from '../features/lab-management';
-import { authApi } from '../api';
+import { BookingApprovalManagement } from '../features/booking-management/lecturer';
+import { EquipmentAvailability } from '../features/equipment-management/lecture';
+import LecturerReportsManagement from '../features/reports-management/lecturer/LecturerReportsManagement';
+import LecturerNotifications from '../features/notification-management/lecturer/LecturerNotifications';
+import { authApi, bookingApi, eventApi, labsApi, roomsApi, equipmentApi, reportsApi, notificationApi } from '../api';
 
 const LecturerDashboard = ({ user: userProp }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -14,6 +18,23 @@ const LecturerDashboard = ({ user: userProp }) => {
   const [eventToast, setEventToast] = useState(null);
   const userDropdownRef = useRef(null);
 
+  // Dashboard data states
+  const [pendingBookings, setPendingBookings] = useState([]);
+  const [myEvents, setMyEvents] = useState([]);
+  const [bookingNames, setBookingNames] = useState({}); // Store user and room names
+  const [dashboardStats, setDashboardStats] = useState({
+    pendingApprovals: 0,
+    myEventsCount: 0,
+    totalParticipants: 0,
+    approvedBookingsThisMonth: 0,
+    totalLabs: 0,
+    totalRooms: 0,
+    availableEquipment: 0,
+    unreadNotifications: 0,
+    myReportsCount: 0
+  });
+  const [loadingStats, setLoadingStats] = useState(false);
+
   // Helper function to generate avatar initials
   const getAvatarInitials = (name) => {
     if (!name) return 'LC';
@@ -23,6 +44,7 @@ const LecturerDashboard = ({ user: userProp }) => {
     }
     return names[0].substring(0, 2).toUpperCase();
   };
+
 
   // Get user display information with fallbacks
   const displayName = user?.fullname || user?.username || 'Lecturer';
@@ -42,6 +64,120 @@ const LecturerDashboard = ({ user: userProp }) => {
       }
     }
   }, [user]);
+
+  // Load dashboard statistics and data
+  useEffect(() => {
+    const loadDashboardData = async () => {
+      if (activeTab !== 'dashboard') return;
+
+      setLoadingStats(true);
+      try {
+        // Get current user ID
+        const userId = user?.id || user?.Id;
+
+        // Fetch data in parallel with count APIs
+        const [
+          allBookings,
+          allEvents,
+          labCount,
+          roomCount,
+          equipmentCount,
+          notificationCount,
+          reportCount
+        ] = await Promise.all([
+          bookingApi.getBookings({ page: 1, pageSize: 1000 }).catch((error) => {
+            console.error('Error fetching bookings:', error);
+            return [];
+          }),
+          eventApi.getEvents({ page: 0, pageSize: 1000 }).catch(() => []),
+          labsApi.getLabCount().catch(() => 0),
+          roomsApi.getRoomCount().catch(() => 0),
+          equipmentApi.getAvailableEquipmentCount().catch(() => 0),
+          notificationApi.getUnreadNotificationCount().catch(() => ({ count: 0 })),
+          reportsApi.getUserReportsCount().catch(() => ({ count: 0 }))
+        ]);
+
+        // Filter pending bookings (Status 0 = Pending)
+        console.log('All bookings:', allBookings);
+        console.log('Bookings length:', Array.isArray(allBookings) ? allBookings.length : 'Not an array');
+        
+        const pendingBookingsList = Array.isArray(allBookings)
+          ? allBookings.filter(b => {
+              console.log('Booking status:', b.status, 'Type:', typeof b.status);
+              console.log('Booking data:', b); // Log full booking data
+              return b.status === 0 || b.status === '0' || b.status === 'Pending';
+            }).slice(0, 5) // Get first 5 pending
+          : [];
+          
+        console.log('Pending bookings:', pendingBookingsList);
+
+        // Filter events created by current lecturer
+        const lecturerEvents = Array.isArray(allEvents)
+          ? allEvents.filter(e => {
+              const eventCreator = e.createdBy || e.CreatedBy;
+              return eventCreator === userId || eventCreator === user?.username;
+            })
+          : [];
+
+        // Calculate active events
+        const activeEvents = lecturerEvents.filter(e => {
+          const status = e.status || e.Status;
+          return status === 'Active' || status === 0;
+        });
+
+        // Calculate total participants from bookings count
+        const totalParticipants = activeEvents.reduce((sum, event) => {
+          return sum + (event.bookingCount || event.BookingCount || 0);
+        }, 0);
+
+        // Calculate approved bookings this month
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const approvedThisMonth = Array.isArray(allBookings)
+          ? allBookings.filter(b => {
+              if (b.status !== 1) return false; // Status 1 = Approved
+              const bookingDate = new Date(b.createdAt || b.CreatedAt);
+              return bookingDate >= startOfMonth;
+            }).length
+          : 0;
+
+        setPendingBookings(pendingBookingsList);
+        setMyEvents(activeEvents.slice(0, 10)); // Show first 10 events
+        
+        // Booking data already includes UserName and RoomName from backend
+        const namesMap = {};
+        for (const booking of pendingBookingsList) {
+          const bookingId = booking.id || booking.Id;
+          const userName = booking.userName || booking.UserName || 'Student Booking';
+          const roomName = booking.roomName || booking.RoomName || 'Unknown Room';
+          
+          namesMap[bookingId] = { 
+            userName, 
+            roomName 
+          };
+        }
+        setBookingNames(namesMap);
+        
+        setDashboardStats({
+          pendingApprovals: pendingBookingsList.length,
+          myEventsCount: activeEvents.length,
+          totalParticipants,
+          approvedBookingsThisMonth: approvedThisMonth,
+          totalLabs: labCount,
+          totalRooms: roomCount,
+          availableEquipment: equipmentCount,
+          unreadNotifications: notificationCount?.count || notificationCount?.Count || 0,
+          myReportsCount: reportCount?.count || reportCount?.Count || 0
+        });
+      } catch (error) {
+        console.error('Error loading dashboard data:', error);
+      } finally {
+        setLoadingStats(false);
+      }
+    };
+
+    loadDashboardData();
+  }, [activeTab, user]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -129,9 +265,9 @@ const LecturerDashboard = ({ user: userProp }) => {
         </svg>
       )
     },
-    { 
-      id: 'attendance', 
-      label: 'Attendance', 
+    {
+      id: 'reports',
+      label: 'Reports',
       icon: (
         <svg xmlns="http://www.w3.org/2000/svg" width="1.125rem" height="1.125rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
@@ -140,8 +276,18 @@ const LecturerDashboard = ({ user: userProp }) => {
         </svg>
       )
     },
-    { 
-      id: 'settings', 
+    {
+      id: 'notifications',
+      label: 'Notifications',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="1.125rem" height="1.125rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path>
+          <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path>
+        </svg>
+      )
+    },
+    {
+      id: 'settings',
       label: 'Settings', 
       icon: (
         <svg xmlns="http://www.w3.org/2000/svg" width="1.125rem" height="1.125rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -159,9 +305,7 @@ const LecturerDashboard = ({ user: userProp }) => {
       case 'approvals':
         return (
           <div className="lecturer-content">
-            <h2>Booking Approvals</h2>
-            <p>Review and approve lab booking requests</p>
-            {/* TODO: Implement booking approval management */}
+            <BookingApprovalManagement />
           </div>
         );
       case 'events':
@@ -209,17 +353,19 @@ const LecturerDashboard = ({ user: userProp }) => {
       case 'equipment':
         return (
           <div className="lecturer-content">
-            <h2>Equipment Availability</h2>
-            <p>View equipment status before approving bookings</p>
-            {/* TODO: Implement equipment availability view */}
+            <EquipmentAvailability />
           </div>
         );
-      case 'attendance':
+      case 'reports':
         return (
           <div className="lecturer-content">
-            <h2>Attendance Reports</h2>
-            <p>Generate and export attendance reports</p>
-            {/* TODO: Implement attendance reports */}
+            <LecturerReportsManagement />
+          </div>
+        );
+      case 'notifications':
+        return (
+          <div className="lecturer-content">
+            <LecturerNotifications />
           </div>
         );
       case 'settings':
@@ -236,17 +382,45 @@ const LecturerDashboard = ({ user: userProp }) => {
   };
 
   const renderDashboard = () => {
-    const pendingBookings = [
-      { id: 1, studentName: 'Nguyen Van A', labName: 'Lab A101', date: '2025-10-15', time: '09:00 - 11:00', purpose: 'Project Development', status: 'Pending' },
-      { id: 2, studentName: 'Tran Thi B', labName: 'Lab B203', date: '2025-10-16', time: '14:00 - 16:00', purpose: 'Team Meeting', status: 'Pending' },
-      { id: 3, studentName: 'Le Van C', labName: 'Lab C305', date: '2025-10-17', time: '10:00 - 12:00', purpose: 'Research', status: 'Pending' }
-    ];
+    // Helper function to format date
+    const formatDate = (dateString) => {
+      if (!dateString) return 'N/A';
+      try {
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return 'N/A';
+        return date.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric'
+        });
+      } catch {
+        return 'N/A';
+      }
+    };
 
-    const myEvents = [
-      { id: 1, title: 'React Workshop', date: '2025-10-18', time: '13:00 - 16:00', registered: 35, capacity: 50, status: 'Active' },
-      { id: 2, title: 'AI & Machine Learning Seminar', date: '2025-10-20', time: '09:00 - 12:00', registered: 78, capacity: 100, status: 'Active' },
-      { id: 3, title: 'Data Science Bootcamp', date: '2025-10-25', time: '08:00 - 17:00', registered: 45, capacity: 60, status: 'Active' }
-    ];
+    // Helper function to format time range
+    const formatTimeRange = (startDate, endDate) => {
+      if (!startDate || !endDate) return 'N/A';
+      try {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        if (isNaN(start.getTime()) || isNaN(end.getTime())) return 'N/A';
+
+        const startTime = start.toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        });
+        const endTime = end.toLocaleTimeString('en-US', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        });
+        return `${startTime} - ${endTime}`;
+      } catch {
+        return 'N/A';
+      }
+    };
 
     return (
       <div className="dashboard-overview">
@@ -276,63 +450,70 @@ const LecturerDashboard = ({ user: userProp }) => {
           </div>
         </div>
         
-        <div className="stats-grid">
-          <div className="stat-card">
-            <div className="stat-card-content">
-              <div className="stat-card-header">
-                <div className="stat-info">
-                  <h3>Pending Approvals</h3>
-                  <p className="stat-number">{pendingBookings.length}</p>
-                  <p className="stat-change">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="0.75rem" height="0.75rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M7 7h10v10"></path>
-                      <path d="M7 17 17 7"></path>
+        {loadingStats ? (
+          <div className="loading" style={{ padding: '40px', textAlign: 'center' }}>
+            <div className="loading-spinner"></div>
+            Loading statistics...
+          </div>
+        ) : (
+          <div className="stats-grid">
+            <div className="stat-card">
+              <div className="stat-card-content">
+                <div className="stat-card-header">
+                  <div className="stat-info">
+                    <h3>Pending Approvals</h3>
+                    <p className="stat-number">{dashboardStats.pendingApprovals}</p>
+                    <p className="stat-change">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="0.75rem" height="0.75rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M7 7h10v10"></path>
+                        <path d="M7 17 17 7"></path>
+                      </svg>
+                      Requires your attention
+                    </p>
+                  </div>
+                  <div className="stat-icon orange">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="1.5rem" height="1.5rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect width="8" height="4" x="8" y="2" rx="1" ry="1"></rect>
+                      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                      <path d="M9 14l2 2 4-4"></path>
                     </svg>
-                    Requires your attention
-                  </p>
-                </div>
-                <div className="stat-icon orange">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="1.5rem" height="1.5rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
-                    <rect width="20" height="14" x="2" y="6" rx="2"></rect>
-                  </svg>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-          
-          <div className="stat-card">
-            <div className="stat-card-content">
-              <div className="stat-card-header">
-                <div className="stat-info">
-                  <h3>My Events</h3>
-                  <p className="stat-number">{myEvents.length}</p>
-                  <p className="stat-change">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="0.75rem" height="0.75rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M7 7h10v10"></path>
-                      <path d="M7 17 17 7"></path>
+
+            <div className="stat-card">
+              <div className="stat-card-content">
+                <div className="stat-card-header">
+                  <div className="stat-info">
+                    <h3>My Events</h3>
+                    <p className="stat-number">{dashboardStats.myEventsCount}</p>
+                    <p className="stat-change">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="0.75rem" height="0.75rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M7 7h10v10"></path>
+                        <path d="M7 17 17 7"></path>
+                      </svg>
+                      All active events
+                    </p>
+                  </div>
+                  <div className="stat-icon green">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="1.5rem" height="1.5rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M8 2v4"></path>
+                      <path d="M16 2v4"></path>
+                      <rect width="1.125rem" height="1.125rem" x="3" y="4" rx="2"></rect>
+                      <path d="M3 10h18"></path>
                     </svg>
-                    All active events
-                  </p>
-                </div>
-                <div className="stat-icon green">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="1.5rem" height="1.5rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M8 2v4"></path>
-                    <path d="M16 2v4"></path>
-                    <rect width="1.125rem" height="1.125rem" x="3" y="4" rx="2"></rect>
-                    <path d="M3 10h18"></path>
-                  </svg>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-          
-          <div className="stat-card">
-            <div className="stat-card-content">
-              <div className="stat-card-header">
-                <div className="stat-info">
-                  <h3>Total Participants</h3>
-                  <p className="stat-number">{myEvents.reduce((sum, e) => sum + e.registered, 0)}</p>
+
+            <div className="stat-card">
+              <div className="stat-card-content">
+                <div className="stat-card-header">
+                  <div className="stat-info">
+                    <h3>Total Participants</h3>
+                    <p className="stat-number">{dashboardStats.totalParticipants}</p>
                   <p className="stat-change">
                     <svg xmlns="http://www.w3.org/2000/svg" width="0.75rem" height="0.75rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M7 7h10v10"></path>
@@ -353,80 +534,31 @@ const LecturerDashboard = ({ user: userProp }) => {
             </div>
           </div>
           
-          <div className="stat-card">
-            <div className="stat-card-content">
-              <div className="stat-card-header">
-                <div className="stat-info">
-                  <h3>This Month</h3>
-                  <p className="stat-number">42</p>
-                  <p className="stat-change">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="0.75rem" height="0.75rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M7 7h10v10"></path>
-                      <path d="M7 17 17 7"></path>
+            <div className="stat-card">
+              <div className="stat-card-content">
+                <div className="stat-card-header">
+                  <div className="stat-info">
+                    <h3>This Month</h3>
+                    <p className="stat-number">{dashboardStats.approvedBookingsThisMonth}</p>
+                    <p className="stat-change">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="0.75rem" height="0.75rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M7 7h10v10"></path>
+                        <path d="M7 17 17 7"></path>
+                      </svg>
+                      Approved bookings
+                    </p>
+                  </div>
+                  <div className="stat-icon purple">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="1.5rem" height="1.5rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
+                      <polyline points="16 7 22 7 22 13"></polyline>
                     </svg>
-                    Approved bookings
-                  </p>
-                </div>
-                <div className="stat-icon purple">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="1.5rem" height="1.5rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
-                    <polyline points="16 7 22 7 22 13"></polyline>
-                  </svg>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-        
-        <div className="feature-cards">
-          <div className="feature-card">
-            <div className="feature-card-content">
-              <div className="feature-icon orange">
-                <svg xmlns="http://www.w3.org/2000/svg" width="2rem" height="2rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
-                  <rect width="20" height="14" x="2" y="6" rx="2"></rect>
-                </svg>
-              </div>
-              <div className="feature-content">
-                <h3>Pending Bookings</h3>
-                <p>Review and approve lab booking requests from students</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="feature-card">
-            <div className="feature-card-content">
-              <div className="feature-icon green">
-                <svg xmlns="http://www.w3.org/2000/svg" width="2rem" height="2rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M8 2v4"></path>
-                  <path d="M16 2v4"></path>
-                  <rect width="1.125rem" height="1.125rem" x="3" y="4" rx="2"></rect>
-                  <path d="M3 10h18"></path>
-                </svg>
-              </div>
-              <div className="feature-content">
-                <h3>Event Management</h3>
-                <p>Create and manage workshops, seminars, and training sessions</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="feature-card">
-            <div className="feature-card-content">
-              <div className="feature-icon blue">
-                <svg xmlns="http://www.w3.org/2000/svg" width="2rem" height="2rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
-                  <polyline points="17 21 17 13 7 13 7 21"></polyline>
-                  <polyline points="7 3 7 8 15 8"></polyline>
-                </svg>
-              </div>
-              <div className="feature-content">
-                <h3>Attendance Reports</h3>
-                <p>Generate and export attendance reports for events</p>
-              </div>
-            </div>
-          </div>
-        </div>
+        )}
         
         <div className="recent-section">
           <div className="recent-header">
@@ -447,32 +579,42 @@ const LecturerDashboard = ({ user: userProp }) => {
                   <p>No pending bookings</p>
                 </div>
               ) : (
-                pendingBookings.map(booking => (
-                  <div key={booking.id} className="booking-card">
-                    <div className="booking-info">
-                      <div className="booking-icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="1.25rem" height="1.25rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
-                          <circle cx="9" cy="7" r="4"></circle>
-                          <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
-                          <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                        </svg>
+                pendingBookings.slice(0, 5).map(booking => {
+                  const bookingId = booking.id || booking.Id;
+                  const startTime = booking.startTime || booking.StartTime;
+                  const endTime = booking.endTime || booking.EndTime;
+                  const purpose = booking.purpose || booking.Purpose || 'No purpose specified';
+
+                  // Get names from state
+                  const names = bookingNames[bookingId] || { userName: 'Loading...', roomName: 'Loading...' };
+
+                  return (
+                    <div key={bookingId} className="booking-card">
+                      <div className="booking-info">
+                        <div className="booking-icon">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="1.25rem" height="1.25rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="9" cy="7" r="4"></circle>
+                            <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                          </svg>
+                        </div>
+                        <div className="booking-details">
+                          <h4>{names.userName}</h4>
+                          <p>{names.roomName}</p>
+                          <p className="booking-purpose">{purpose}</p>
+                        </div>
                       </div>
-                      <div className="booking-details">
-                        <h4>{booking.studentName}</h4>
-                        <p>{booking.labName}</p>
-                        <p className="booking-purpose">{booking.purpose}</p>
+                      <div className="booking-meta">
+                        <p className="booking-date">{formatDate(startTime)}</p>
+                        <p className="booking-time">{formatTimeRange(startTime, endTime)}</p>
+                        <span className="status-badge pending">
+                          Pending
+                        </span>
                       </div>
                     </div>
-                    <div className="booking-meta">
-                      <p className="booking-date">{booking.date}</p>
-                      <p className="booking-time">{booking.time}</p>
-                      <span className={`status-badge ${booking.status.toLowerCase()}`}>
-                        {booking.status}
-                      </span>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
@@ -499,30 +641,40 @@ const LecturerDashboard = ({ user: userProp }) => {
                   <p>No active events</p>
                 </div>
               ) : (
-                myEvents.map(event => (
-                  <div key={event.id} className="booking-card">
-                    <div className="booking-info">
-                      <div className="booking-icon">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="1.25rem" height="1.25rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M8 2v4"></path>
-                          <path d="M16 2v4"></path>
-                          <rect width="1.125rem" height="1.125rem" x="3" y="4" rx="2"></rect>
-                          <path d="M3 10h18"></path>
-                        </svg>
+                myEvents.map(event => {
+                  const eventId = event.id || event.Id;
+                  const title = event.title || event.Title || 'Untitled Event';
+                  const startDate = event.startDate || event.StartDate;
+                  const endDate = event.endDate || event.EndDate;
+                  const location = event.location || event.Location || 'N/A';
+                  const bookingCount = event.bookingCount || event.BookingCount || 0;
+                  const status = event.status || event.Status || 'Unknown';
+
+                  return (
+                    <div key={eventId} className="booking-card">
+                      <div className="booking-info">
+                        <div className="booking-icon">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="1.25rem" height="1.25rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M8 2v4"></path>
+                            <path d="M16 2v4"></path>
+                            <rect width="1.125rem" height="1.125rem" x="3" y="4" rx="2"></rect>
+                            <path d="M3 10h18"></path>
+                          </svg>
+                        </div>
+                        <div className="booking-details">
+                          <h4>{title}</h4>
+                          <p>{formatDate(startDate)} • {formatTimeRange(startDate, endDate)}</p>
+                          <p className="booking-purpose">{location} • {bookingCount} participants</p>
+                        </div>
                       </div>
-                      <div className="booking-details">
-                        <h4>{event.title}</h4>
-                        <p>{event.date} • {event.time}</p>
-                        <p className="booking-purpose">{event.registered}/{event.capacity} participants</p>
+                      <div className="booking-meta">
+                        <span className={`status-badge ${typeof status === 'string' ? status.toLowerCase() : 'active'}`}>
+                          {typeof status === 'string' ? status : 'Active'}
+                        </span>
                       </div>
                     </div>
-                    <div className="booking-meta">
-                      <span className={`status-badge ${event.status.toLowerCase()}`}>
-                        {event.status}
-                      </span>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
