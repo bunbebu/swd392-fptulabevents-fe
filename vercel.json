@@ -6,7 +6,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "http://swd392group6.runasp.net/api/:path*"
+      "destination": "/api/proxy?path=api/:path*"
     },
     {
       "source": "/(.*)",

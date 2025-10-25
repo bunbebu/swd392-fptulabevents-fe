@@ -33,18 +33,24 @@ function Login({ onLogin, onSwitchToRegister }) {
     setLoading(true);
     setError('');
     try {
-      // Call backend to get Google authorization URL
-      const googleLoginUrl = authApi.getGoogleLoginUrl();
-      const response = await fetch(googleLoginUrl);
-      const result = await response.json();
+      // Call backend API to get Google authorization URL
+      // The api.js request() function unwraps the response automatically
+      const result = await authApi.getGoogleLoginUrl();
 
-      if (result.code === 200 && result.data?.authorizationUrl) {
+      console.log('Google OAuth response:', result);
+
+      // Get authorization URL (api.js already unwrapped data.data)
+      const authUrl = result?.authorizationUrl || result?.AuthorizationUrl;
+
+      if (authUrl) {
         // Redirect to Google's authorization page
-        window.location.href = result.data.authorizationUrl;
+        window.location.href = authUrl;
       } else {
-        throw new Error('Failed to get Google authorization URL');
+        console.error('No authorization URL in response:', result);
+        throw new Error('Failed to get Google authorization URL from backend');
       }
     } catch (err) {
+      console.error('Google login error:', err);
       setError(err.message || 'Failed to initiate Google sign-in');
       setLoading(false);
     }
