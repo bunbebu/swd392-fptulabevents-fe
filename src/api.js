@@ -1714,7 +1714,8 @@ export async function updateReportStatus(id, status, adminResponse = '') {
  * @returns {Promise<number>} Count of pending reports
  */
 export async function getPendingReportsCount() {
-  return await request('/api/reports/admin/pending-count', { method: 'GET' });
+  const result = await request('/api/reports/admin/pending-count', { method: 'GET' });
+  return typeof result === 'number' ? result : (result?.pendingCount || result?.PendingCount || 0);
 }
 
 /**
@@ -1807,7 +1808,8 @@ export async function deleteReport(id) {
  * @returns {Promise<number>} Count of user's reports
  */
 export async function getUserReportsCount() {
-  return await request('/api/reports/user/count', { method: 'GET' });
+  const result = await request('/api/reports/user/count', { method: 'GET' });
+  return typeof result === 'number' ? result : (result?.count || result?.Count || 0);
 }
 
 // Reports Management API
@@ -1856,7 +1858,7 @@ export async function getBookings(filters = {}) {
   if (filters.pageSize) params.append('PageSize', String(filters.pageSize));
 
   const queryString = params.toString();
-  const url = queryString ? `/api/bookings?${queryString}` : '/api/bookings';
+  const url = queryString ? `/api/Bookings?${queryString}` : '/api/Bookings';
 
   console.log('[Booking API] Request URL:', url);
   console.log('[Booking API] Filters:', filters);
@@ -1871,7 +1873,7 @@ export async function getBookings(filters = {}) {
  * @returns {Promise<Object>} Booking details
  */
 export async function getBookingById(id) {
-  return await request(`/api/bookings/${id}`, { method: 'GET' });
+  return await request(`/api/Bookings/${id}`, { method: 'GET' });
 }
 
 /**
@@ -1896,7 +1898,7 @@ export async function createBooking(bookingData) {
     Notes: bookingData.notes || null
   };
 
-  return await request('/api/bookings', {
+  return await request('/api/Bookings', {
     method: 'POST',
     body: JSON.stringify(payload)
   });
@@ -1922,7 +1924,7 @@ export async function updateBookingStatus(id, status, notes = '') {
 
   console.log('updateBookingStatus - Sending payload:', payload);
 
-  return await request(`/api/bookings/${id}/status`, {
+  return await request(`/api/Bookings/${id}/status`, {
     method: 'PATCH',
     body: JSON.stringify(payload)
   });
@@ -1935,7 +1937,7 @@ export async function updateBookingStatus(id, status, notes = '') {
  * @returns {Promise<Object>} Deletion result
  */
 export async function deleteBooking(id) {
-  return await request(`/api/bookings/${id}`, { method: 'DELETE' });
+  return await request(`/api/Bookings/${id}`, { method: 'DELETE' });
 }
 
 // Booking Management API

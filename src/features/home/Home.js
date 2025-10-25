@@ -3,6 +3,7 @@ import { authApi, bookingApi, eventApi, roomsApi, labsApi, notificationApi } fro
 import LabList from '../lab-management/components/LabList';
 import LabDetail from '../lab-management/components/LabDetail';
 import EventList from '../event-management/components/EventList';
+import BookingList from '../booking-management/components/BookingList';
 
 function Home({ user: userProp }) {
   const [user, setUser] = useState(userProp);
@@ -23,6 +24,7 @@ function Home({ user: userProp }) {
   const [loading, setLoading] = useState(true);
   const [loadingData, setLoadingData] = useState(false);
 
+
   // Load user data from storage
   useEffect(() => {
     const storedUser = window.localStorage.getItem('user') || window.sessionStorage.getItem('user');
@@ -37,11 +39,184 @@ function Home({ user: userProp }) {
 
   // Load dashboard data
   useEffect(() => {
-    if (!user) return; // Wait for user to be loaded
+    console.log('=== useEffect triggered ===');
+    console.log('User:', user);
+    console.log('Active tab:', activeTab);
+    
+    if (!user) {
+      console.log('Waiting for user to load...');
+      return;
+    }
+    
+    console.log('Tab changed to:', activeTab, 'User:', user);
     
     if (activeTab === 'dashboard') {
+      console.log('Loading dashboard data...');
+      
+      // Load all dashboard data
+      const loadDashboardData = async () => {
+        try {
+          setLoadingData(true);
+          console.log('Calling loadDashboardData - will call loadUpcomingBookings');
+          
+          // Load bookings
+          const loadUpcomingBookings = async () => {
+            try {
+              console.log('=== LOADING UPCOMING BOOKINGS - START ===');
+              console.log('User Id:', user?.id);
+              
+              if (!user?.id) {
+                console.log('No user ID found - cannot load bookings');
+                return;
+              }
+              
+              console.log('Calling bookingApi.getBookings with userId:', user.id);
+              
+              const response = await bookingApi.getBookings({
+                userId: user.id,
+                pageSize: 10
+              });
+
+              console.log('Booking API response:', response);
+              
+              const bookings = Array.isArray(response) ? response : (response?.data || []);
+              
+              console.log('Parsed bookings:', bookings);
+              console.log('Number of bookings:', bookings.length);
+              
+              // Debug: Show first booking
+              if (bookings.length > 0) {
+                console.log('First booking:', bookings[0]);
+                console.log('First booking keys:', Object.keys(bookings[0]));
+                console.log('First booking EndTime:', bookings[0].EndTime);
+                console.log('First booking endTime:', bookings[0].endTime);
+                console.log('EndTime type:', typeof bookings[0].EndTime);
+                console.log('EndTime parsed:', new Date(bookings[0].EndTime));
+              }
+              
+              // Filter to only show upcoming bookings (EndTime >= now)
+              const now = new Date();
+              console.log('Current time:', now);
+              
+              const upcomingBookings = bookings.filter(booking => {
+                // Try both camelCase and PascalCase
+                const endTimeValue = booking.endTime || booking.EndTime;
+                if (!endTimeValue) {
+                  console.log(`Booking ${booking.Id || booking.id}: No endTime found`);
+                  return false;
+                }
+                const endTime = new Date(endTimeValue);
+                const isUpcoming = endTime >= now;
+                console.log(`Booking ${booking.Id || booking.id}: EndTime=${endTime}, isUpcoming=${isUpcoming}`);
+                return isUpcoming;
+              });
+              
+              console.log('Upcoming bookings after filter:', upcomingBookings);
+              console.log('Number of upcoming bookings:', upcomingBookings.length);
+              console.log('=== LOADING UPCOMING BOOKINGS - END ===');
+              
+              setUpcomingBookings(upcomingBookings);
+              console.log('After setUpcomingBookings, state updated');
+            } catch (error) {
+              console.error('=== ERROR LOADING BOOKINGS ===');
+              console.error('Error details:', error);
+              console.error('Error message:', error.message);
+              console.error('Error stack:', error.stack);
+              setUpcomingBookings([]);
+            }
+          };
+          
+          // Load available labs
+          const loadAvailableLabs = async () => {
+            try {
+              const userRoleCheck = user?.roles?.[0] || 'Student';
+              const isLecturerCheck = user?.roles?.includes('Lecturer') || user?.roles?.includes('Teacher');
+              
+              console.log('Loading available labs for user role:', userRoleCheck);
+              const response = isLecturerCheck || userRoleCheck === 'Student' 
+                ? await labsApi.getAvailableLabs()
+                : await labsApi.getLabs({ pageSize: 10 });
+              
+              console.log('Labs API response:', response);
+              const labs = Array.isArray(response) ? response : (response?.data || []);
+              console.log('Parsed labs:', labs);
+              setAvailableLabs(labs);
+            } catch (error) {
+              console.error('Error loading labs:', error);
+              setAvailableLabs([]);
+            }
+          };
+
+          // Load upcoming events
+          const loadUpcomingEvents = async () => {
+            try {
+              console.log('Loading upcoming events...');
+              const response = await eventApi.getUpcomingEvents();
+              console.log('Events API response:', response);
+              
+              let eventData = [];
+              if (Array.isArray(response)) {
+                eventData = response;
+              } else if (response?.data && Array.isArray(response.data)) {
+                eventData = response.data;
+              } else if (response?.Data && Array.isArray(response.Data)) {
+                eventData = response.Data;
+              }
+              
+              console.log('Parsed events:', eventData);
+              
+              const normalizedEvents = eventData.map(event => normalizeEvent(event));
+              
+              const today = new Date();
+              today.setHours(0, 0, 0, 0);
+              
+              const upcoming = normalizedEvents.filter(event => {
+                if (!event.StartDate) return false;
+                const startDate = new Date(event.StartDate);
+                return startDate >= today;
+              });
+              
+              setUpcomingEvents(upcoming.slice(0, 5));
+            } catch (error) {
+              console.error('Error loading events:', error);
+              setUpcomingEvents([]);
+            }
+          };
+
+          // Load notifications
+          const loadNotifications = async () => {
+            try {
+              if (!user?.id) return;
+              
+              const response = await notificationApi.getUserNotifications({ pageSize: 10 });
+              const notifs = Array.isArray(response) ? response : (response?.data || []);
+              setNotifications(notifs);
+            } catch (error) {
+              console.error('Error loading notifications:', error);
+              setNotifications([]);
+            }
+          };
+          
+          console.log('About to call Promise.all with loadUpcomingBookings');
+          console.log('Will call: loadUpcomingBookings, loadUpcomingEvents, loadNotifications, loadAvailableLabs');
+          
+          await Promise.all([
+            loadUpcomingBookings(),
+            loadUpcomingEvents(),
+            loadNotifications(),
+            loadAvailableLabs()
+          ]);
+          console.log('Promise.all completed');
+        } catch (error) {
+          console.error('Error loading dashboard data:', error);
+        } finally {
+          setLoadingData(false);
+        }
+      };
+      
       loadDashboardData();
     } else if (activeTab === 'bookings') {
+      console.log('Loading bookings tab data...');
       loadBookingsData();
     } else if (activeTab === 'events') {
       loadEventsData();
@@ -64,124 +239,29 @@ function Home({ user: userProp }) {
     };
   }, []);
 
-  // Load dashboard data
-  const loadDashboardData = async () => {
-    try {
-      setLoadingData(true);
-      await Promise.all([
-        loadUpcomingBookings(),
-        loadUpcomingEvents(),
-        loadNotifications(),
-        loadAvailableLabs()
-      ]);
-    } catch (error) {
-      console.error('Error loading dashboard data:', error);
-    } finally {
-      setLoadingData(false);
-    }
-  };
-
-  // Load available labs
-  const loadAvailableLabs = async () => {
-    try {
-      const userRoleCheck = user?.roles?.[0] || 'Student';
-      const isLecturerCheck = user?.roles?.includes('Lecturer') || user?.roles?.includes('Teacher');
-      
-      console.log('Loading available labs for user role:', userRoleCheck);
-      // Use getAvailableLabs API for student/lecturer, getLabs for admin
-      const response = isLecturerCheck || userRoleCheck === 'Student' 
-        ? await labsApi.getAvailableLabs()
-        : await labsApi.getLabs({ pageSize: 10 });
-      
-      console.log('Labs API response:', response);
-      const labs = Array.isArray(response) ? response : (response?.data || []);
-      console.log('Parsed labs:', labs);
-      setAvailableLabs(labs);
-    } catch (error) {
-      console.error('Error loading labs:', error);
-      setAvailableLabs([]);
-    }
-  };
-
-  // Load upcoming bookings
-  const loadUpcomingBookings = async () => {
-    try {
-      if (!user?.Id) return;
-      
-      const fromDate = new Date();
-      const toDate = new Date();
-      toDate.setDate(toDate.getDate() + 7); // Next 7 days
-      
-      const response = await bookingApi.getBookings({
-        userId: user.Id,
-        from: fromDate.toISOString(),
-        to: toDate.toISOString(),
-        pageSize: 5
-      });
-
-      const bookings = Array.isArray(response) ? response : (response?.data || []);
-      setUpcomingBookings(bookings);
-    } catch (error) {
-      console.error('Error loading bookings:', error);
-      setUpcomingBookings([]);
-    }
-  };
-
-  // Load upcoming events
-  const loadUpcomingEvents = async () => {
-    try {
-      console.log('Loading upcoming events...');
-      const response = await eventApi.getUpcomingEvents();
-      console.log('Events API response:', response);
-      
-      // Handle different response formats (same as EventList)
-      let eventData = [];
-      if (Array.isArray(response)) {
-        eventData = response;
-      } else if (response?.data && Array.isArray(response.data)) {
-        eventData = response.data;
-      } else if (response?.Data && Array.isArray(response.Data)) {
-        eventData = response.Data;
-      }
-      
-      console.log('Parsed events:', eventData);
-      console.log('Number of events:', eventData.length);
-      
-      // Normalize event data to handle both Title/title properties
-      const normalizedEvents = eventData.map(event => normalizeEvent(event));
-      
-      console.log('Normalized events:', normalizedEvents);
-      
-      // Filter only upcoming events (StartDate >= today)
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      const upcoming = normalizedEvents.filter(event => {
-        if (!event.StartDate) return false;
-        const startDate = new Date(event.StartDate);
-        return startDate >= today;
-      });
-      
-      console.log('Upcoming events after filtering:', upcoming);
-      setUpcomingEvents(upcoming.slice(0, 5)); // Limit to 5 for dashboard
-    } catch (error) {
-      console.error('Error loading events:', error);
-      setUpcomingEvents([]);
-    }
-  };
-
   // Load bookings data
   const loadBookingsData = async () => {
     try {
       setLoadingData(true);
-      if (!user?.Id) return;
+      if (!user?.id) {
+        console.log('No user ID found for bookings tab');
+        return;
+      }
+      
+      console.log('Loading all bookings for user:', user.id);
       
       const response = await bookingApi.getBookings({
-        userId: user.Id,
+        userId: user.id,
         pageSize: 50
       });
 
+      console.log('Bookings tab API response:', response);
+      
       const bookings = Array.isArray(response) ? response : (response?.data || []);
+      
+      console.log('Parsed bookings for tab:', bookings);
+      console.log('Number of bookings:', bookings.length);
+      
       setUpcomingBookings(bookings);
     } catch (error) {
       console.error('Error loading bookings:', error);
@@ -249,22 +329,21 @@ function Home({ user: userProp }) {
     }
   };
 
-  // Load notifications
-  const loadNotifications = async () => {
-    try {
-      if (!user?.Id) return;
-      
-      const response = await notificationApi.getUserNotifications({ pageSize: 10 });
-      const notifs = Array.isArray(response) ? response : (response?.data || []);
-      setNotifications(notifs);
-    } catch (error) {
-      console.error('Error loading notifications:', error);
-      setNotifications([]);
-    }
+  // Status helpers
+  const getStatusLabel = (status) => {
+    const statusMap = {
+      0: 'Pending',
+      1: 'Approved',
+      2: 'Rejected',
+      3: 'Cancelled',
+      4: 'Completed'
+    };
+    return statusMap[status] || 'Pending';
   };
 
-  // Status helpers
   const getStatusBadgeClass = (status) => {
+    // Handle both string and number status
+    const statusLabel = typeof status === 'number' ? getStatusLabel(status) : status;
     const statusMap = {
       'Pending': 'status-pending',
       'Approved': 'status-approved',
@@ -274,7 +353,7 @@ function Home({ user: userProp }) {
       'Inactive': 'status-inactive',
       'Completed': 'status-completed'
     };
-    return statusMap[status] || 'status-pending';
+    return statusMap[statusLabel] || 'status-pending';
   };
 
   const formatDate = (dateString) => {
@@ -518,8 +597,8 @@ function Home({ user: userProp }) {
               </div>
             ) : (
               <div className="home-booking-list">
-                {upcomingBookings.slice(0, 3).map(booking => (
-                  <div key={booking.Id} className="home-booking-item">
+                {upcomingBookings.slice(0, 5).map(booking => (
+                  <div key={booking.id} className="home-booking-item">
                     <div className="home-booking-info">
                       <div className="home-booking-icon">
                 <svg xmlns="http://www.w3.org/2000/svg" width="1.5rem" height="1.5rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -527,12 +606,12 @@ function Home({ user: userProp }) {
                         </svg>
                       </div>
                       <div>
-                        <h4>{booking.RoomName}</h4>
-                        <p>{formatDate(booking.StartTime)} • {formatTime(booking.StartTime)} - {formatTime(booking.EndTime)}</p>
+                        <h4>{booking.roomName}</h4>
+                        <p>{formatDate(booking.startTime)} • {formatTime(booking.startTime)} - {formatTime(booking.endTime)}</p>
                       </div>
                     </div>
-                    <span className={`status-badge ${getStatusBadgeClass(booking.Status)}`}>
-                      {booking.Status}
+                    <span className={`status-badge ${getStatusBadgeClass(booking.status)}`}>
+                      {getStatusLabel(booking.status)}
                     </span>
                   </div>
                 ))}
@@ -702,87 +781,13 @@ function Home({ user: userProp }) {
 
   const renderBookings = () => (
     <div className="home-content">
-      <div className="content-header">
-        <div>
-          <h1>My Bookings</h1>
-          <p className="subtitle">View and manage your lab bookings</p>
-        </div>
-        <button className="btn-primary" onClick={() => setActiveTab('labs')}>
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-          </svg>
-          New Booking
-        </button>
-      </div>
-
-      {/* Bookings Table */}
-      <div className="data-table-container">
-        {loadingData ? (
-          <div className="empty-state">
-            <p>Loading bookings...</p>
-          </div>
-        ) : upcomingBookings.length === 0 ? (
-          <div className="empty-state">
-            <p>No bookings found</p>
-          </div>
-        ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Room</th>
-                <th>Date & Time</th>
-                <th>Purpose</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {upcomingBookings.map(booking => (
-                <tr key={booking.Id}>
-                  <td>
-                    <div className="table-cell-main">
-                      <strong>{booking.RoomName}</strong>
-                      <span className="table-cell-sub">{booking.Location}</span>
-                    </div>
-                  </td>
-                  <td>
-                    <div className="table-cell-main">
-                      <strong>{formatDate(booking.StartTime)}</strong>
-                      <span className="table-cell-sub">{formatTime(booking.StartTime)} - {formatTime(booking.EndTime)}</span>
-                    </div>
-                  </td>
-                  <td>{booking.Purpose || 'N/A'}</td>
-                  <td>
-                    <span className={`status-badge ${getStatusBadgeClass(booking.Status)}`}>
-                      {booking.Status}
-                    </span>
-                  </td>
-                  <td>
-                    <div className="table-actions">
-                      <button className="btn-icon" title="View Details">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                          <circle cx="12" cy="12" r="3"></circle>
-</svg>
-                      </button>
-                      {booking.Status === 'Pending' && (
-                        <button className="btn-icon" title="Cancel">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M3 6h18"></path>
-                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
-                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-                          </svg>
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+      <BookingList
+        userRole={userRole}
+        userId={user?.id}
+        onViewBooking={(bookingId) => {
+          console.log('View booking:', bookingId);
+        }}
+      />
     </div>
   );
 
@@ -820,8 +825,8 @@ function Home({ user: userProp }) {
                 <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path>
                 <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path>
               </svg>
-              {notifications.filter(n => !n.isRead).length > 0 && (
-                <span className="home-notification-badge">{notifications.filter(n => !n.isRead).length}</span>
+              {notifications.filter(n => !n.IsRead).length > 0 && (
+                <span className="home-notification-badge">{notifications.filter(n => !n.IsRead).length}</span>
               )}
             </button>
 

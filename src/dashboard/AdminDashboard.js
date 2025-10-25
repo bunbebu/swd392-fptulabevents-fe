@@ -12,7 +12,16 @@ import { EventList, EventDetail } from '../features/event-management';
 import { BookingList, BookingDetail, CreateBooking } from '../features/booking-management';
 import { NotificationManagement } from '../features/notification-management';
 import { ReportManagement } from '../features/reports-management';
-import { authApi, bookingApi } from '../api';
+import {
+  authApi,
+  bookingApi,
+  userApi,
+  labsApi,
+  roomsApi,
+  equipmentApi,
+  eventApi,
+  reportsApi
+} from '../api';
 
 const AdminDashboard = ({ user: userProp }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -36,6 +45,21 @@ const AdminDashboard = ({ user: userProp }) => {
   const [recentBookings, setRecentBookings] = useState([]);
   const [loadingBookings, setLoadingBookings] = useState(false);
   const userDropdownRef = useRef(null);
+
+  // Dashboard statistics states
+  const [dashboardStats, setDashboardStats] = useState({
+    totalBookings: 0,
+    activeBookings: 0,
+    pendingBookings: 0,
+    totalUsers: 0,
+    totalLabs: 0,
+    totalRooms: 0,
+    totalEquipment: 0,
+    totalEvents: 0,
+    totalReports: 0,
+    pendingReports: 0
+  });
+  const [loadingStats, setLoadingStats] = useState(false);
 
   // Helper function to generate avatar initials
   const getAvatarInitials = (name) => {
@@ -65,6 +89,68 @@ const AdminDashboard = ({ user: userProp }) => {
       }
     }
   }, [user]);
+
+  // Load dashboard statistics
+  useEffect(() => {
+    const loadDashboardStats = async () => {
+      if (activeTab !== 'dashboard') return;
+
+      setLoadingStats(true);
+      try {
+        // Fetch all statistics in parallel
+        const [
+          allBookings,
+          allUsers,
+          labCount,
+          roomCount,
+          equipmentCount,
+          eventCount,
+          pendingReportsData
+        ] = await Promise.all([
+          bookingApi.getBookings({ page: 1, pageSize: 1000 }).catch(() => []),
+          userApi.getAllUsersUnpaged().catch(() => []),
+          labsApi.getLabCount().catch(() => 0),
+          roomsApi.getRoomCount().catch(() => 0),
+          equipmentApi.getEquipmentCount().catch(() => 0),
+          eventApi.getEventCount().catch(() => ({ Count: 0 })),
+          reportsApi.getPendingReportsCount().catch(() => ({ pendingCount: 0 }))
+        ]);
+
+        // Calculate booking statistics
+        const totalBookings = Array.isArray(allBookings) ? allBookings.length : 0;
+        const activeBookings = Array.isArray(allBookings)
+          ? allBookings.filter(b => b.status === 1).length // Status 1 = Approved
+          : 0;
+        const pendingBookings = Array.isArray(allBookings)
+          ? allBookings.filter(b => b.status === 0).length // Status 0 = Pending
+          : 0;
+
+        // Extract pending reports count - handle different response formats
+        const pendingReportsCount = typeof pendingReportsData === 'number'
+          ? pendingReportsData
+          : (pendingReportsData?.pendingCount || pendingReportsData?.PendingCount || 0);
+
+        setDashboardStats({
+          totalBookings,
+          activeBookings,
+          pendingBookings,
+          totalUsers: Array.isArray(allUsers) ? allUsers.length : 0,
+          totalLabs: labCount,
+          totalRooms: roomCount,
+          totalEquipment: equipmentCount,
+          totalEvents: eventCount?.Count || 0,
+          totalReports: 0, // Not available from API
+          pendingReports: pendingReportsCount
+        });
+      } catch (error) {
+        console.error('Error loading dashboard stats:', error);
+      } finally {
+        setLoadingStats(false);
+      }
+    };
+
+    loadDashboardStats();
+  }, [activeTab]);
 
   // Load recent bookings for dashboard
   useEffect(() => {
@@ -502,167 +588,127 @@ const AdminDashboard = ({ user: userProp }) => {
 
     return (
       <div className="dashboard-overview">
-        
+
         <div className="dashboard-header">
           <div className="dashboard-title">
             <h1>Admin Dashboard</h1>
             <p>Welcome back, {displayName}. Manage bookings, users, and platform analytics</p>
           </div>
           <div className="dashboard-actions">
-            <button className="btn-new-booking">
+            <button className="btn-new-booking" onClick={() => {
+              setCreatingBooking(true);
+              setActiveTab('bookings');
+            }}>
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M5 12h14"></path>
                 <path d="M12 5v14"></path>
               </svg>
               New Booking
             </button>
-            <button className="btn-secondary">
+            <button className="btn-secondary" onClick={() => setActiveTab('reports')}>
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
-                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M3 3v16a2 2 0 0 0 2 2h16"></path>
+                <path d="M18 17V9"></path>
+                <path d="M13 17V5"></path>
+                <path d="M8 17v-3"></path>
               </svg>
-              Manage Plans
+              View Reports
             </button>
           </div>
         </div>
         
-        <div className="stats-grid">
-          <div className="stat-card">
-            <div className="stat-card-content">
-              <div className="stat-card-header">
-                <div className="stat-info">
-                  <h3>Total Bookings</h3>
-                  <p className="stat-number">48</p>
-                  <p className="stat-change">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M7 7h10v10"></path>
-                      <path d="M7 17 17 7"></path>
+        {loadingStats ? (
+          <div className="loading" style={{ padding: '40px', textAlign: 'center' }}>
+            <div className="loading-spinner"></div>
+            Loading statistics...
+          </div>
+        ) : (
+          <div className="stats-grid">
+            <div className="stat-card">
+              <div className="stat-card-content">
+                <div className="stat-card-header">
+                  <div className="stat-info">
+                    <h3>Total Bookings</h3>
+                    <p className="stat-number">{dashboardStats.totalBookings}</p>
+                    <p className="stat-change">
+                      {dashboardStats.pendingBookings > 0 && (
+                        <>{dashboardStats.pendingBookings} pending approval</>
+                      )}
+                    </p>
+                  </div>
+                  <div className="stat-icon blue">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M8 2v4"></path>
+                      <path d="M16 2v4"></path>
+                      <rect width="18" height="18" x="3" y="4" rx="2"></rect>
+                      <path d="M3 10h18"></path>
                     </svg>
-                    +12% from last month
-                  </p>
-                </div>
-                <div className="stat-icon blue">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
-                    <path d="M16 3.128a4 4 0 0 1 0 7.744"></path>
-                    <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
-                    <circle cx="9" cy="7" r="4"></circle>
-                  </svg>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-          
-          <div className="stat-card">
-            <div className="stat-card-content">
-              <div className="stat-card-header">
-                <div className="stat-info">
-                  <h3>Active Bookings</h3>
-                  <p className="stat-number">1</p>
-                  <p className="stat-change">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M7 7h10v10"></path>
-                      <path d="M7 17 17 7"></path>
+
+            <div className="stat-card">
+              <div className="stat-card-content">
+                <div className="stat-card-header">
+                  <div className="stat-info">
+                    <h3>Active Bookings</h3>
+                    <p className="stat-number">{dashboardStats.activeBookings}</p>
+                    <p className="stat-change">Currently approved</p>
+                  </div>
+                  <div className="stat-icon green">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                      <polyline points="22 4 12 14.01 9 11.01"></polyline>
                     </svg>
-                    +8% from last month
-                  </p>
-                </div>
-                <div className="stat-icon green">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
-                    <path d="M16 3.128a4 4 0 0 1 0 7.744"></path>
-                    <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
-                    <circle cx="9" cy="7" r="4"></circle>
-                  </svg>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-          
-          <div className="stat-card">
-            <div className="stat-card-content">
-              <div className="stat-card-header">
-                <div className="stat-info">
-                  <h3>Total Revenue</h3>
-                  <p className="stat-number">$29.99</p>
-                  <p className="stat-change">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M7 7h10v10"></path>
-                      <path d="M7 17 17 7"></path>
+
+            <div className="stat-card">
+              <div className="stat-card-content">
+                <div className="stat-card-header">
+                  <div className="stat-info">
+                    <h3>Total Users</h3>
+                    <p className="stat-number">{dashboardStats.totalUsers}</p>
+                    <p className="stat-change">Registered accounts</p>
+                  </div>
+                  <div className="stat-icon purple">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+                      <path d="M16 3.128a4 4 0 0 1 0 7.744"></path>
+                      <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+                      <circle cx="9" cy="7" r="4"></circle>
                     </svg>
-                    +15% from last month
-                  </p>
-                </div>
-                <div className="stat-icon yellow">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="12" x2="12" y1="2" y2="22"></line>
-                    <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-                  </svg>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-          
-          <div className="stat-card">
-            <div className="stat-card-content">
-              <div className="stat-card-header">
-                <div className="stat-info">
-                  <h3>Monthly Revenue</h3>
-                  <p className="stat-number">$29.99</p>
-                  <p className="stat-change">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M7 7h10v10"></path>
-                      <path d="M7 17 17 7"></path>
+
+            <div className="stat-card">
+              <div className="stat-card-content">
+                <div className="stat-card-header">
+                  <div className="stat-info">
+                    <h3>Pending Reports</h3>
+                    <p className="stat-number">{dashboardStats.pendingReports}</p>
+                    <p className="stat-change">
+                      {dashboardStats.pendingReports > 0 ? 'Needs attention' : 'All resolved'}
+                    </p>
+                  </div>
+                  <div className="stat-icon yellow">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
+                      <path d="M12 9v4"></path>
+                      <path d="M12 17h.01"></path>
                     </svg>
-                    +22% from last month
-                  </p>
-                </div>
-                <div className="stat-icon purple">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"></polyline>
-                    <polyline points="16 7 22 7 22 13"></polyline>
-                  </svg>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-        
-        <div className="feature-cards">
-          <div className="feature-card">
-            <div className="feature-card-content">
-              <div className="feature-icon blue">
-                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
-                  <path d="M16 3.128a4 4 0 0 1 0 7.744"></path>
-                  <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
-                  <circle cx="9" cy="7" r="4"></circle>
-                </svg>
-              </div>
-              <div className="feature-content">
-                <h3>Manage Bookings</h3>
-                <p>View and manage all bookings and their status</p>
-              </div>
-            </div>
-          </div>
-          
-          <div className="feature-card">
-            <div className="feature-card-content">
-              <div className="feature-icon purple">
-                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="12" x2="12" y1="20" y2="10"></line>
-                  <line x1="18" x2="18" y1="20" y2="4"></line>
-                  <line x1="6" x2="6" y1="20" y2="16"></line>
-                </svg>
-              </div>
-              <div className="feature-content">
-                <h3>Room Management</h3>
-                <p>Configure rooms and equipment</p>
-              </div>
-            </div>
-          </div>
-        </div>
-        
+        )}
+
         <div className="recent-section">
           <div className="recent-header">
             <div className="recent-title">

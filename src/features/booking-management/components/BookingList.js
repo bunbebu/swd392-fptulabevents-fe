@@ -18,6 +18,7 @@ import BookingStatusForm from '../admin/BookingStatusForm';
  */
 const BookingList = ({
   userRole = 'Student',
+  userId,
   onViewBooking,
   onCreateBooking,
   initialToast,
@@ -39,16 +40,16 @@ const BookingList = ({
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState(null);
 
+  const isAdmin = userRole === 'Admin';
+
   // API filter states (excluding page/pageSize - those are managed separately)
   const [apiFilters, setApiFilters] = useState({
     roomId: '', // Backend uses roomId for lab filtering
-    userId: '',
+    userId: !isAdmin && userId ? userId : '', // Auto-set userId for non-admin users
     status: '',
     from: '', // Backend uses from/to for date filtering
     to: ''
   });
-
-  const isAdmin = userRole === 'Admin';
 
   // Helper function to normalize booking data
   const normalizeBooking = (booking) => {
@@ -74,6 +75,13 @@ const BookingList = ({
     window.clearTimeout(showToast._tid);
     showToast._tid = window.setTimeout(() => setToast(null), 3000);
   };
+
+  // Auto-set userId filter for non-admin users
+  useEffect(() => {
+    if (!isAdmin && userId) {
+      setApiFilters(prev => ({ ...prev, userId: userId }));
+    }
+  }, [isAdmin, userId]);
 
   // Show initial toast if provided
   useEffect(() => {
@@ -382,22 +390,24 @@ const BookingList = ({
   return (
     <div className="room-list-container">
       <>
-        <div className="room-list-header">
-          <h2>Room Booking Management</h2>
-          {isAdmin && onCreateBooking && (
-            <button
-              className="btn-new-booking"
-              onClick={onCreateBooking}
-              disabled={actionLoading}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M5 12h14"></path>
-                <path d="M12 5v14"></path>
-              </svg>
-              Create New Booking
-            </button>
-          )}
-        </div>
+        {isAdmin && (
+          <div className="room-list-header">
+            <h2>Room Booking Management</h2>
+            {onCreateBooking && (
+              <button
+                className="btn-new-booking"
+                onClick={onCreateBooking}
+                disabled={actionLoading}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 12h14"></path>
+                  <path d="M12 5v14"></path>
+                </svg>
+                Create New Booking
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Success/Error Notification above table */}
         {toast && (
@@ -526,6 +536,7 @@ const BookingList = ({
                 <th>ID</th>
                 <th className="col-name">Room</th>
                 {isAdmin && <th>User</th>}
+                <th>Purpose</th>
                 <th>Start Time</th>
                 <th>End Time</th>
                 <th>Status</th>
@@ -535,7 +546,7 @@ const BookingList = ({
             <tbody>
               {loading && !paginationLoading ? (
                 <tr>
-                  <td colSpan={isAdmin ? "7" : "6"} className="loading-cell">
+                  <td colSpan={isAdmin ? "8" : "7"} className="loading-cell">
                     <div className="loading-spinner"></div>
                     Loading bookings...
                   </td>
@@ -550,12 +561,13 @@ const BookingList = ({
                     <td><div className="skeleton-text"></div></td>
                     <td><div className="skeleton-text"></div></td>
                     <td><div className="skeleton-text"></div></td>
+                    <td><div className="skeleton-text"></div></td>
                     {isAdmin && <td><div className="skeleton-text"></div></td>}
                   </tr>
                 ))
               ) : bookings.length === 0 ? (
                 <tr>
-                  <td colSpan={isAdmin ? "7" : "6"} className="no-data">
+                  <td colSpan={isAdmin ? "8" : "7"} className="no-data">
                     No booking data
                   </td>
                 </tr>
@@ -578,6 +590,7 @@ const BookingList = ({
                       <strong>{booking.roomName}</strong>
                     </td>
                     {isAdmin && <td>{booking.userName}</td>}
+                    <td>{booking.purpose || 'N/A'}</td>
                     <td>{formatDate(booking.startTime)}</td>
                     <td>{formatDate(booking.endTime)}</td>
                     <td>

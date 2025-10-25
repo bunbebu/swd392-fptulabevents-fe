@@ -467,7 +467,7 @@ const LabDetail = ({ labId, onNavigateBack, isAdmin = false, userRole = 'Student
                   </div>
                   <div className="detail-item">
                     <label>Room Status:</label>
-                    <span className={getStatusBadgeClass(lab.room?.status || lab.room?.Status || lab.Room?.status || lab.Room?.Status)}>
+                    <span className="detail-value">
                       {lab.room?.status || lab.room?.Status || lab.Room?.status || lab.Room?.Status || 'Unknown'}
                     </span>
                   </div>

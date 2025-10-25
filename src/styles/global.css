@@ -1656,6 +1656,37 @@ code {
   color: #6b7280;
 }
 
+/* Booking Status Badges */
+.status-badge.status-pending {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.status-badge.status-approved {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #86efac;
+}
+
+.status-badge.status-rejected {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+}
+
+.status-badge.status-cancelled {
+  background: #f3f4f6;
+  color: #6b7280;
+  border: 1px solid #d1d5db;
+}
+
+.status-badge.status-completed {
+  background: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #93c5fd;
+}
+
 /* Image Preview */
 .image-preview {
   margin-top: 8px;
