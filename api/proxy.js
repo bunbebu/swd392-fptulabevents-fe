@@ -22,7 +22,16 @@ module.exports = async (req, res) => {
   try {
     // Get the path from query parameter
     const path = req.query.path || '';
-    const targetUrl = `${BACKEND_URL}/${path}`;
+
+    // Forward all other query parameters (except 'path')
+    const queryParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(req.query)) {
+      if (key !== 'path') {
+        queryParams.append(key, value);
+      }
+    }
+    const queryString = queryParams.toString();
+    const targetUrl = `${BACKEND_URL}/${path}${queryString ? '?' + queryString : ''}`;
 
     console.log(`Proxying ${req.method} request to: ${targetUrl}`);
     console.log('Request body:', req.body);
