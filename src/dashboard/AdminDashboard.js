@@ -9,7 +9,7 @@ import CreateLab from '../features/lab-management/admin/CreateLab';
 import EditLab from '../features/lab-management/admin/EditLab';
 import { EditEvent } from '../features/event-management/admin';
 import { EventList, EventDetail } from '../features/event-management';
-import { BookingList, BookingDetail, CreateBooking } from '../features/booking-management';
+import { BookingList, BookingDetail } from '../features/booking-management';
 import { NotificationManagement } from '../features/notification-management';
 import { ReportManagement } from '../features/reports-management';
 import {
@@ -40,7 +40,6 @@ const AdminDashboard = ({ user: userProp }) => {
   const [editingEventId, setEditingEventId] = useState(null);
   const [eventToast, setEventToast] = useState(null);
   const [viewingBookingId, setViewingBookingId] = useState(null);
-  const [creatingBooking, setCreatingBooking] = useState(false);
   const [bookingToast, setBookingToast] = useState(null);
   const [recentBookings, setRecentBookings] = useState([]);
   const [loadingBookings, setLoadingBookings] = useState(false);
@@ -341,19 +340,6 @@ const AdminDashboard = ({ user: userProp }) => {
       case 'dashboard':
         return renderDashboard();
       case 'bookings':
-        if (creatingBooking) {
-          return (
-            <div className="admin-content">
-              <CreateBooking
-                onNavigateBack={() => setCreatingBooking(false)}
-                onSuccess={() => {
-                  setCreatingBooking(false);
-                  setBookingToast({ message: 'Booking created successfully!', type: 'success' });
-                }}
-              />
-            </div>
-          );
-        }
         if (viewingBookingId) {
           return (
             <div className="admin-content">
@@ -370,7 +356,6 @@ const AdminDashboard = ({ user: userProp }) => {
             <BookingList
               userRole="Admin"
               onViewBooking={(bookingId) => setViewingBookingId(bookingId)}
-              onCreateBooking={() => setCreatingBooking(true)}
               initialToast={bookingToast}
               onToastShown={() => setBookingToast(null)}
             />
@@ -595,16 +580,6 @@ const AdminDashboard = ({ user: userProp }) => {
             <p>Welcome back, {displayName}. Manage bookings, users, and platform analytics</p>
           </div>
           <div className="dashboard-actions">
-            <button className="btn-new-booking" onClick={() => {
-              setCreatingBooking(true);
-              setActiveTab('bookings');
-            }}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M5 12h14"></path>
-                <path d="M12 5v14"></path>
-              </svg>
-              New Booking
-            </button>
             <button className="btn-secondary" onClick={() => setActiveTab('reports')}>
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M3 3v16a2 2 0 0 0 2 2h16"></path>

@@ -12,6 +12,7 @@ const UserNotifications = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState('All');
+  const [searchTerm, setSearchTerm] = useState('');
   const [unreadCount, setUnreadCount] = useState(0);
   const [selectedNotification, setSelectedNotification] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -84,8 +85,23 @@ const UserNotifications = () => {
 
   // Filter notifications
   const filteredNotifications = notifications.filter(notif => {
-    if (filter === 'Unread') return !notif.isRead;
-    if (filter === 'Read') return notif.isRead;
+    // Apply read/unread filter
+    if (filter === 'Unread') {
+      if (notif.isRead) return false;
+    } else if (filter === 'Read') {
+      if (!notif.isRead) return false;
+    }
+    
+    // Apply search filter
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      return (
+        notif.title?.toLowerCase().includes(searchLower) ||
+        notif.content?.toLowerCase().includes(searchLower) ||
+        notif.targetGroup?.toLowerCase().includes(searchLower)
+      );
+    }
+    
     return true;
   });
 
@@ -114,9 +130,9 @@ const UserNotifications = () => {
   if (loading) {
     return (
       <div className="admin-content">
-        <div className="loading-container">
+        <div className="loading">
           <div className="loading-spinner"></div>
-          <p>Loading notifications...</p>
+          Loading notifications...
         </div>
       </div>
     );
@@ -164,57 +180,34 @@ const UserNotifications = () => {
         )}
       </div>
 
-      {/* Stats */}
-      <div className="stats-grid" style={{ marginBottom: '24px' }}>
-        <div className="stat-card">
-          <div className="stat-card-content">
-            <div className="stat-info">
-              <h3>Total Notifications</h3>
-              <p className="stat-number">{notifications.length}</p>
-            </div>
-            <div className="stat-icon blue">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-              </svg>
-            </div>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-card-content">
-            <div className="stat-info">
-              <h3>Unread</h3>
-              <p className="stat-number">{unreadCount}</p>
-            </div>
-            <div className="stat-icon orange">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="8" x2="12" y2="12"></line>
-                <line x1="12" y1="16" x2="12.01" y2="16"></line>
-              </svg>
-            </div>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-card-content">
-            <div className="stat-info">
-              <h3>Read</h3>
-              <p className="stat-number">{notifications.length - unreadCount}</p>
-            </div>
-            <div className="stat-icon green">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="20 6 9 17 4 12"></polyline>
-              </svg>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Filter */}
-      <div className="table-controls">
+      {/* Filter and Search */}
+      <div className="table-controls" style={{ marginBottom: '1.5rem' }}>
         <div className="filter-group">
+          <div className="search-bar">
+            <svg className="search-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <path d="m21 21-4.35-4.35"></path>
+            </svg>
+            <input
+              type="text"
+              placeholder="Search notifications..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="search-input"
+            />
+            {searchTerm && (
+              <button 
+                className="clear-search"
+                onClick={() => setSearchTerm('')}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 6L6 18"></path>
+                  <path d="M6 6l12 12"></path>
+                </svg>
+              </button>
+            )}
+          </div>
+          
           <select
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
@@ -224,6 +217,28 @@ const UserNotifications = () => {
             <option value="Unread">Unread Only</option>
             <option value="Read">Read Only</option>
           </select>
+        </div>
+        
+        <div className="filter-actions">
+          <button 
+            className="btn btn-primary"
+            onClick={() => {
+              // Force re-filter by updating state
+              setSearchTerm(searchTerm);
+              setFilter(filter);
+            }}
+          >
+            Apply Filter
+          </button>
+          <button 
+            className="btn btn-secondary"
+            onClick={() => {
+              setSearchTerm('');
+              setFilter('All');
+            }}
+          >
+            Clear
+          </button>
         </div>
       </div>
 
@@ -262,23 +277,22 @@ const UserNotifications = () => {
                   </p>
                   <div className="notification-meta">
                     <span className="notification-time">{formatDate(notification.createdAt)}</span>
-                    <span className="notification-badge">{notification.targetGroup}</span>
                   </div>
                 </div>
-                {!notification.isRead && (
-                  <button
-                    className="btn-icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
+                <button
+                  className={`btn-icon ${notification.isRead ? 'checked' : 'unchecked'}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!notification.isRead) {
                       handleMarkAsRead(notification.id);
-                    }}
-                    title="Mark as read"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polyline points="20 6 9 17 4 12"></polyline>
-                    </svg>
-                  </button>
-                )}
+                    }
+                  }}
+                  title={notification.isRead ? "Already read" : "Mark as read"}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                  </svg>
+                </button>
               </div>
             ))}
           </div>
@@ -331,6 +345,14 @@ const UserNotifications = () => {
           display: flex;
           flex-direction: column;
           gap: 12px;
+          width: 100%;
+          max-width: 100%;
+        }
+
+        .notifications-list {
+          width: 100%;
+          max-width: 100%;
+          overflow: hidden;
         }
 
         .notification-item {
@@ -342,6 +364,9 @@ const UserNotifications = () => {
           border: 1px solid #e0e0e0;
           border-radius: 8px;
           transition: all 0.2s;
+          box-sizing: border-box;
+          width: 100%;
+          max-width: 100%;
         }
 
         .notification-item:hover {
@@ -380,6 +405,9 @@ const UserNotifications = () => {
 
         .notification-content {
           flex: 1;
+          min-width: 0;
+          overflow: hidden;
+          word-wrap: break-word;
         }
 
         .notification-content h4 {
@@ -401,6 +429,7 @@ const UserNotifications = () => {
           align-items: center;
           gap: 12px;
           font-size: 12px;
+          flex-wrap: wrap;
         }
 
         .notification-time {
@@ -414,6 +443,49 @@ const UserNotifications = () => {
           font-size: 11px;
           font-weight: 500;
           color: #666;
+          white-space: nowrap;
+        }
+
+        .btn-icon {
+          flex-shrink: 0;
+          padding: 8px;
+          border: 1px solid #d1d5db;
+          cursor: pointer;
+          border-radius: 50%;
+          transition: all 0.2s;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 32px;
+          height: 32px;
+        }
+
+        .btn-icon.unchecked {
+          background: transparent;
+          border-color: #d1d5db;
+          color: #6b7280;
+        }
+
+        .btn-icon.unchecked:hover {
+          background: #f0f7ff;
+          border-color: #3b82f6;
+          color: #3b82f6;
+        }
+
+        .btn-icon.checked {
+          background: #3b82f6;
+          border-color: #3b82f6;
+          color: white;
+        }
+
+        .btn-icon.checked:hover {
+          background: #2563eb;
+          border-color: #2563eb;
+        }
+
+        .btn-icon svg {
+          width: 16px;
+          height: 16px;
         }
 
         .detail-meta {

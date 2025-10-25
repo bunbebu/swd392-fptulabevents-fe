@@ -109,12 +109,13 @@ const LabList = ({
 
     console.log('   ✅ Successfully fetched:', successCount, 'rooms');
 
-    // Update cache
+    // Update cache with new data
+    const updatedCache = { ...roomsCache, ...newRoomData };
     if (Object.keys(newRoomData).length > 0) {
-      setRoomsCache(prev => ({ ...prev, ...newRoomData }));
+      setRoomsCache(updatedCache);
     }
 
-    // Merge room names into labs
+    // Merge room names into labs using updated cache
     return labsList.map(lab => {
       const roomId = lab.roomId || lab.RoomId;
       if (!roomId) return lab;
@@ -122,7 +123,7 @@ const LabList = ({
       const existingRoomName = lab.roomName || lab.RoomName || lab.room?.name || lab.room?.Name || lab.Room?.name || lab.Room?.Name;
       if (existingRoomName) return lab;
 
-      const roomData = newRoomData[roomId] || roomsCache[roomId];
+      const roomData = updatedCache[roomId];
       if (roomData) {
         return {
           ...lab,
@@ -173,22 +174,16 @@ const LabList = ({
       // Try to get lab list first, handle other calls separately
       let labList;
       try {
-        // Use getAvailableLabs for student/lecturer, getLabs for admin
-        if (isAdmin) {
-          labList = await labsApi.getLabs(cleanFilters);
-        } else {
-          labList = await labsApi.getAvailableLabs();
-        }
+        // For non-admin users, filter by Active status only
+        const labFilters = isAdmin ? cleanFilters : { ...cleanFilters, status: 0 }; // 0 = Active
+        labList = await labsApi.getLabs(labFilters);
       } catch (authErr) {
         // If 401, try to refresh token and retry once
         if (authErr.status === 401) {
           try {
             await authApi.refreshAuthToken();
-            if (isAdmin) {
-              labList = await labsApi.getLabs(cleanFilters);
-            } else {
-              labList = await labsApi.getAvailableLabs();
-            }
+            const labFilters = isAdmin ? cleanFilters : { ...cleanFilters, status: 0 };
+            labList = await labsApi.getLabs(labFilters);
           } catch (refreshErr) {
             throw authErr; // Throw original error if refresh fails
           }
@@ -436,10 +431,10 @@ const LabList = ({
   return (
     <div className="lab-list-container">
       <>
-          <div className="lab-list-header">
-            <h2>Lab Management</h2>
-            {isAdmin && (
-              <button 
+          {isAdmin && (
+            <div className="lab-list-header">
+              <h2>Lab Management</h2>
+              <button
                 className="btn-new-booking"
                 onClick={() => onCreateLab && onCreateLab()}
                 disabled={actionLoading}
@@ -450,8 +445,8 @@ const LabList = ({
                 </svg>
                 Create New Lab
               </button>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Success/Error Notification above table */}
           {toast && (

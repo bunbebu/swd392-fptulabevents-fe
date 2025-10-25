@@ -4,12 +4,15 @@ import LabList from '../lab-management/components/LabList';
 import LabDetail from '../lab-management/components/LabDetail';
 import EventList from '../event-management/components/EventList';
 import BookingList from '../booking-management/components/BookingList';
+import UserProfile from '../user-management/student/UserProfile';
+import UserNotifications from '../notification-management/user/UserNotifications';
 
 function Home({ user: userProp }) {
   const [user, setUser] = useState(userProp);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const userDropdownRef = useRef(null);
+  const notificationDropdownRef = useRef(null);
   
   // Lab detail state
   const [selectedLabId, setSelectedLabId] = useState(null);
@@ -19,6 +22,7 @@ function Home({ user: userProp }) {
   const [upcomingEvents, setUpcomingEvents] = useState([]);
   const [availableLabs, setAvailableLabs] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [notificationDropdownOpen, setNotificationDropdownOpen] = useState(false);
   
   // Loading states
   const [loading, setLoading] = useState(true);
@@ -183,20 +187,6 @@ function Home({ user: userProp }) {
             }
           };
 
-          // Load notifications
-          const loadNotifications = async () => {
-            try {
-              if (!user?.id) return;
-              
-              const response = await notificationApi.getUserNotifications({ pageSize: 10 });
-              const notifs = Array.isArray(response) ? response : (response?.data || []);
-              setNotifications(notifs);
-            } catch (error) {
-              console.error('Error loading notifications:', error);
-              setNotifications([]);
-            }
-          };
-          
           console.log('About to call Promise.all with loadUpcomingBookings');
           console.log('Will call: loadUpcomingBookings, loadUpcomingEvents, loadNotifications, loadAvailableLabs');
           
@@ -230,6 +220,9 @@ function Home({ user: userProp }) {
     const handleClickOutside = (event) => {
       if (userDropdownRef.current && !userDropdownRef.current.contains(event.target)) {
         setUserDropdownOpen(false);
+      }
+      if (notificationDropdownRef.current && !notificationDropdownRef.current.contains(event.target)) {
+        setNotificationDropdownOpen(false);
       }
     };
 
@@ -326,6 +319,20 @@ function Home({ user: userProp }) {
       setAvailableLabs([]);
     } finally {
       setLoadingData(false);
+    }
+  };
+
+  // Load notifications
+  const loadNotifications = async () => {
+    try {
+      if (!user?.id) return;
+      
+      const response = await notificationApi.getUserNotifications({ pageSize: 10 });
+      const notifs = Array.isArray(response) ? response : (response?.data || []);
+      setNotifications(notifs);
+    } catch (error) {
+      console.error('Error loading notifications:', error);
+      setNotifications([]);
     }
   };
 
@@ -459,6 +466,26 @@ function Home({ user: userProp }) {
           <rect width="20" height="14" x="2" y="6" rx="2"></rect>
         </svg>
       )
+    },
+    {
+      id: 'notifications',
+      label: 'Notifications',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="1.125rem" height="1.125rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path>
+          <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path>
+        </svg>
+      )
+    },
+    {
+      id: 'profile',
+      label: 'Profile',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="1.125rem" height="1.125rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
+          <circle cx="12" cy="7" r="4"></circle>
+        </svg>
+      )
     }
   ];
 
@@ -473,6 +500,10 @@ function Home({ user: userProp }) {
         return renderEvents();
       case 'bookings':
         return renderBookings();
+      case 'notifications':
+        return renderNotifications();
+      case 'profile':
+        return renderProfile();
       default:
         return renderDashboard();
     }
@@ -561,7 +592,7 @@ function Home({ user: userProp }) {
             </svg>
           </div>
           <div className="quick-stat-content">
-            <p className="quick-stat-number">{notifications.filter(n => !n.IsRead).length}</p>
+            <p className="quick-stat-number">{notifications.filter(n => !n.isRead).length}</p>
             <p className="quick-stat-label">New Notifications</p>
           </div>
         </div>
@@ -791,6 +822,18 @@ function Home({ user: userProp }) {
     </div>
   );
 
+  const renderNotifications = () => (
+    <div className="home-content">
+      <UserNotifications />
+    </div>
+  );
+
+  const renderProfile = () => (
+    <UserProfile
+      onNavigateBack={() => setActiveTab('dashboard')}
+    />
+  );
+
   return (
     <div className="home-page">
       {/* Modern Header - No Sidebar */}
@@ -820,15 +863,83 @@ function Home({ user: userProp }) {
 
           {/* User Section */}
           <div className="home-header-right">
-            <button className="home-icon-btn" title="Notifications">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path>
-                <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path>
-              </svg>
-              {notifications.filter(n => !n.IsRead).length > 0 && (
-                <span className="home-notification-badge">{notifications.filter(n => !n.IsRead).length}</span>
+            <div 
+              className="notification-dropdown-container" 
+              ref={notificationDropdownRef}
+              onMouseEnter={() => setNotificationDropdownOpen(true)}
+              onMouseLeave={() => setNotificationDropdownOpen(false)}
+            >
+              <button 
+                className="home-icon-btn" 
+                title="Notifications"
+                onClick={() => setActiveTab('notifications')}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path>
+                  <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path>
+                </svg>
+                {notifications.filter(n => !n.isRead).length > 0 && (
+                  <span className="home-notification-badge">{notifications.filter(n => !n.isRead).length}</span>
+                )}
+              </button>
+              
+              {notificationDropdownOpen && notifications.length > 0 && (
+                <div className="notification-dropdown">
+                  <div className="notification-dropdown-header">
+                    <h3>Notifications</h3>
+                    <button 
+                      className="notification-dropdown-close"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setNotificationDropdownOpen(false);
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <div className="notification-dropdown-list">
+                    {notifications.slice(0, 5).map((notification) => (
+                      <div 
+                        key={notification.id} 
+                        className={`notification-dropdown-item ${!notification.isRead ? 'unread' : ''}`}
+                        onClick={async () => {
+                          if (!notification.isRead) {
+                            try {
+                              await notificationApi.markNotificationAsRead(notification.id);
+                              await loadNotifications();
+                            } catch (error) {
+                              console.error('Error marking notification as read:', error);
+                              await loadNotifications();
+                            }
+                          }
+                          setActiveTab('notifications');
+                          setNotificationDropdownOpen(false);
+                        }}
+                      >
+                        <div className="notification-dropdown-content">
+                          <h4>{notification.title}</h4>
+                          <p>{notification.content?.substring(0, 60)}...</p>
+                          <span className="notification-dropdown-time">
+                            {formatDate(notification.createdAt)}
+                          </span>
+                        </div>
+                        {!notification.isRead && (
+                          <span className="notification-dropdown-dot"></span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="notification-dropdown-footer">
+                    <button onClick={() => {
+                      setActiveTab('notifications');
+                      setNotificationDropdownOpen(false);
+                    }}>
+                      View All Notifications
+                    </button>
+                  </div>
+                </div>
               )}
-            </button>
+            </div>
 
             <div className="home-user-menu" ref={userDropdownRef}>
               <div
@@ -864,7 +975,10 @@ function Home({ user: userProp }) {
                   </div>
                   <div className="home-dropdown-divider"></div>
                   <div className="home-dropdown-menu">
-                    <div className="home-dropdown-item">
+                    <div className="home-dropdown-item" onClick={() => {
+                      setActiveTab('profile');
+                      setUserDropdownOpen(false);
+                    }}>
                       <svg xmlns="http://www.w3.org/2000/svg" width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path>
                         <circle cx="12" cy="7" r="4"></circle>

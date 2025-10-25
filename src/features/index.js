@@ -35,6 +35,5 @@ export {
 export {
   BookingList,
   BookingDetail,
-  CreateBooking,
   bookingApi
 } from './booking-management';

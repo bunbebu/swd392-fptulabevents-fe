@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { userApi } from '../../../api';
-import UserForm from '../UserForm';
-import UserStatusForm from '../UserStatusForm';
-import CreateUser from '../CreateUser';
-import EditUser from '../EditUser';
+import UserForm from '../admin/UserForm';
+import UserStatusForm from '../admin/UserStatusForm';
+import CreateUser from '../admin/CreateUser';
+import EditUser from '../admin/EditUser';
 import UserDetail from './UserDetail';
 
 const UserList = () => {

@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { useRoles } from '../../contexts/RolesContext';
-import { userApi } from '../../api';
+import { useRoles } from '../../../contexts/RolesContext';
+import { userApi } from '../../../api';
 
 /**
- * Create User Page Component - Admin Only
+ * Edit User Page Component - Admin Only
  * 
- * Dedicated page for creating new users
+ * Dedicated page for editing existing users
  * 
  * Related Use Cases:
  * - UC-20: Manage Users (Admin)
  */
-const CreateUser = ({ onNavigateBack, onSuccess }) => {
+const EditUser = ({ user, onNavigateBack, onSuccess }) => {
   const [formData, setFormData] = useState({
     email: '',
     username: '',
@@ -25,13 +25,32 @@ const CreateUser = ({ onNavigateBack, onSuccess }) => {
 
   // Debug: Log roles data
   useEffect(() => {
-    console.log('CreateUser - Roles Debug:', {
+    console.log('EditUser - Roles Debug:', {
       availableRoles,
       rolesLoading,
       rolesError,
       rolesCount: availableRoles?.length || 0
     });
   }, [availableRoles, rolesLoading, rolesError]);
+
+  // Initialize form data
+  useEffect(() => {
+    if (user) {
+      // Filter out invalid UUIDs and empty roles
+      const validRoles = user.roles ? user.roles
+        .filter(role => role && role.id && role.id !== '00000000-0000-0000-0000-000000000000')
+        .map(role => role.id) : [];
+      
+      setFormData({
+        email: user.email || '',
+        username: user.username || '',
+        password: '', // Don't pre-fill password for security
+        fullname: user.fullname || '',
+        mssv: user.mssv || '',
+        roles: validRoles
+      });
+    }
+  }, [user]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -48,19 +67,10 @@ const CreateUser = ({ onNavigateBack, onSuccess }) => {
   const validate = () => {
     const newErrors = {};
 
-    if (!formData.email.trim()) {
-      newErrors.email = 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'Email is invalid';
-    }
+    // Email and username validation removed for edit mode
+    // They are read-only fields
 
-    if (!formData.username.trim()) {
-      newErrors.username = 'Username is required';
-    }
-
-    if (!formData.password.trim()) {
-      newErrors.password = 'Password is required';
-    } else if (formData.password.length < 6) {
+    if (formData.password && formData.password.length < 6) {
       newErrors.password = 'Password must be at least 6 characters';
     }
 
@@ -97,43 +107,35 @@ const CreateUser = ({ onNavigateBack, onSuccess }) => {
         return role ? role.name : null;
       }).filter(name => name !== null);
       
-      console.log('CreateUser - Roles debug:', {
-        originalRoles: formData.roles,
-        filteredRoles: filteredRoles,
-        roleNames: roleNames,
-        availableRoles: availableRoles,
-        rolesCount: availableRoles?.length || 0
-      });
-      
       const submitData = {
-        email: formData.email.trim(),
-        username: formData.username.trim(),
-        password: formData.password,
         fullname: formData.fullname.trim(),
         mssv: formData.mssv.trim(),
         roles: roleNames
       };
+      
+      console.log('EditUser - Roles debug:', {
+        originalRoles: formData.roles,
+        filteredRoles: filteredRoles,
+        roleNames: roleNames,
+        availableRoles: availableRoles,
+        rolesCount: availableRoles?.length || 0,
+        submitData: submitData
+      });
 
-      console.log('CreateUser - About to call createUser API with:', {
-        submitData: submitData,
-        rolesToSubmit: submitData.roles
-      });
-      
-      // Validate roles before submission
-      if (submitData.roles.length === 0) {
-        console.warn('CreateUser - No roles to submit, skipping roles update');
-        // Remove roles from submitData if empty
-        delete submitData.roles;
+      // Only include password if it's provided
+      if (formData.password.trim()) {
+        submitData.password = formData.password;
       }
-      
-      console.log('CreateUser - About to call createUser API with:', {
+
+      console.log('EditUser - About to call updateUser API with:', {
+        userId: user.id,
         submitData: submitData,
         rolesToSubmit: submitData.roles
       });
       
       // Validate roles before submission
       if (submitData.roles.length === 0) {
-        console.warn('CreateUser - No roles to submit, skipping roles update');
+        console.warn('EditUser - No roles to submit, skipping roles update');
         // Remove roles from submitData if empty
         delete submitData.roles;
       } else {
@@ -141,13 +143,13 @@ const CreateUser = ({ onNavigateBack, onSuccess }) => {
         const validRoles = submitData.roles.filter(roleName => {
           const isValid = availableRoles.some(role => role.name === roleName);
           if (!isValid) {
-            console.warn(`CreateUser - Role name ${roleName} not found in available roles, skipping`);
+            console.warn(`EditUser - Role name ${roleName} not found in available roles, skipping`);
           }
           return isValid;
         });
         
         if (validRoles.length === 0) {
-          console.warn('CreateUser - No valid roles to submit, skipping roles update');
+          console.warn('EditUser - No valid roles to submit, skipping roles update');
           delete submitData.roles;
         } else {
           submitData.roles = validRoles;
@@ -155,16 +157,16 @@ const CreateUser = ({ onNavigateBack, onSuccess }) => {
       }
       
       try {
-        await userApi.createUser(submitData);
+        await userApi.updateUser(user.id, submitData);
       } catch (error) {
         // If roles cause error, try without roles
         if (error.message && error.message.includes('Roles not found')) {
-          console.warn('CreateUser - Roles caused error, retrying without roles');
+          console.warn('EditUser - Roles caused error, retrying without roles');
           const submitDataWithoutRoles = { ...submitData };
           delete submitDataWithoutRoles.roles;
           
-          console.log('CreateUser - Retrying without roles:', submitDataWithoutRoles);
-          await userApi.createUser(submitDataWithoutRoles);
+          console.log('EditUser - Retrying without roles:', submitDataWithoutRoles);
+          await userApi.updateUser(user.id, submitDataWithoutRoles);
         } else {
           throw error;
         }
@@ -177,8 +179,8 @@ const CreateUser = ({ onNavigateBack, onSuccess }) => {
         onNavigateBack();
       }
     } catch (err) {
-      console.error('Failed to create user:', err);
-      setErrors({ submit: err.message || 'Failed to create user' });
+      console.error('Failed to update user:', err);
+      setErrors({ submit: err.message || 'Failed to update user' });
     } finally {
       setLoading(false);
     }
@@ -189,6 +191,33 @@ const CreateUser = ({ onNavigateBack, onSuccess }) => {
       onNavigateBack();
     }
   };
+
+  if (!user) {
+    return (
+      <div className="create-user-page">
+        <div className="page-header">
+          <div className="header-content">
+            <button 
+              className="back-button"
+              onClick={handleCancel}
+              title="Back to User List"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 12H5"></path>
+                <path d="M12 19l-7-7 7-7"></path>
+              </svg>
+            </button>
+            <h1>Edit User</h1>
+          </div>
+        </div>
+        <div className="page-content">
+          <div className="form-container">
+            <div className="error-message">User not found</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="create-user-page">
@@ -205,7 +234,7 @@ const CreateUser = ({ onNavigateBack, onSuccess }) => {
               <path d="M12 19l-7-7 7-7"></path>
             </svg>
           </button>
-          <h1>Create New User</h1>
+          <h1>Edit User: {user.fullname || user.username}</h1>
         </div>
       </div>
 
@@ -232,9 +261,11 @@ const CreateUser = ({ onNavigateBack, onSuccess }) => {
                   onChange={handleChange}
                   className={errors.email ? 'error' : ''}
                   placeholder="user@fpt.edu.vn"
-                  disabled={loading}
+                  disabled={true}
+                  readOnly
                 />
                 {errors.email && <span className="error-message">{errors.email}</span>}
+                <small className="form-hint">Email cannot be changed</small>
               </div>
 
               {/* Username */}
@@ -250,15 +281,17 @@ const CreateUser = ({ onNavigateBack, onSuccess }) => {
                   onChange={handleChange}
                   className={errors.username ? 'error' : ''}
                   placeholder="username"
-                  disabled={loading}
+                  disabled={true}
+                  readOnly
                 />
                 {errors.username && <span className="error-message">{errors.username}</span>}
+                <small className="form-hint">Username cannot be changed</small>
               </div>
 
               {/* Password */}
               <div className="form-group">
                 <label htmlFor="password">
-                  Password <span className="required">*</span>
+                  New Password
                 </label>
                 <input
                   type="password"
@@ -267,10 +300,11 @@ const CreateUser = ({ onNavigateBack, onSuccess }) => {
                   value={formData.password}
                   onChange={handleChange}
                   className={errors.password ? 'error' : ''}
-                  placeholder="Enter password"
+                  placeholder="Leave empty to keep current password"
                   disabled={loading}
                 />
                 {errors.password && <span className="error-message">{errors.password}</span>}
+                <small className="form-hint">Leave empty to keep current password</small>
               </div>
 
               {/* Full Name */}
@@ -324,13 +358,13 @@ const CreateUser = ({ onNavigateBack, onSuccess }) => {
                         <br />
                         Please refresh the page and login again to load roles.
                         <br />
-                        <small>You can still create the user and assign roles later.</small>
+                        <small>You can still update the user and assign roles later.</small>
                       </>
                     ) : (
                       <>
                         Failed to load roles: {rolesError}
                         <br />
-                        <small>You can still create the user and assign roles later.</small>
+                        <small>You can still update the user and assign roles later.</small>
                       </>
                     )}
                   </div>
@@ -353,7 +387,7 @@ const CreateUser = ({ onNavigateBack, onSuccess }) => {
                   >
                     <option value="">Select a role (optional)</option>
                     {availableRoles.map(role => {
-                      console.log('CreateUser - Role in dropdown:', role);
+                      console.log('EditUser - Role in dropdown:', role);
                       return (
                         <option key={role.id || role.Id || role.name || role.Name} value={role.id || role.Id || role.name || role.Name}>
                           {role.name || role.Name || role.id || role.Id}
@@ -380,7 +414,7 @@ const CreateUser = ({ onNavigateBack, onSuccess }) => {
                 className="btn-primary"
                 disabled={loading}
               >
-                {loading ? 'Creating...' : 'Create User'}
+                {loading ? 'Updating...' : 'Update User'}
               </button>
             </div>
           </form>
@@ -390,4 +424,4 @@ const CreateUser = ({ onNavigateBack, onSuccess }) => {
   );
 };
 
-export default CreateUser;
+export default EditUser;

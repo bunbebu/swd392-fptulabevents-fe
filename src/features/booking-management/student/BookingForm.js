@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { eventApi } from '../../../api';
 
 /**
  * Booking Form Component
  * A popup form for creating lab/room bookings
- * 
+ *
  * @param {Object} props
  * @param {boolean} props.isOpen - Whether the modal is open
  * @param {Function} props.onClose - Callback when modal is closed
@@ -21,9 +22,31 @@ const BookingForm = ({ isOpen, onClose, onSubmit, roomInfo, isSubmitting = false
   });
 
   const [errors, setErrors] = useState({});
+  const [events, setEvents] = useState([]);
+  const [loadingEvents, setLoadingEvents] = useState(false);
+
+  // Load events when modal opens
+  useEffect(() => {
+    const loadEvents = async () => {
+      if (isOpen) {
+        try {
+          setLoadingEvents(true);
+          const eventsData = await eventApi.getEvents();
+          const eventsList = Array.isArray(eventsData) ? eventsData : (eventsData?.data || []);
+          setEvents(eventsList);
+        } catch (err) {
+          console.error('Failed to load events:', err);
+          setEvents([]);
+        } finally {
+          setLoadingEvents(false);
+        }
+      }
+    };
+    loadEvents();
+  }, [isOpen]);
 
   // Reset form when modal opens/closes
-  React.useEffect(() => {
+  useEffect(() => {
     if (!isOpen) {
       setFormData({
         startTime: '',
@@ -184,17 +207,24 @@ const BookingForm = ({ isOpen, onClose, onSubmit, roomInfo, isSubmitting = false
 
           <div className="form-group">
             <label htmlFor="eventId">
-              Event ID (Optional)
+              Event (Optional)
             </label>
-            <input
-              type="text"
+            <select
               id="eventId"
               name="eventId"
               value={formData.eventId}
               onChange={handleChange}
-              disabled={isSubmitting}
-              placeholder="Enter event UUID if booking is for an event"
-            />
+              disabled={isSubmitting || loadingEvents}
+            >
+              <option value="">
+                {loadingEvents ? 'Loading events...' : 'No event (regular booking)'}
+              </option>
+              {events.map(event => (
+                <option key={event.id || event.Id} value={event.id || event.Id}>
+                  {event.title || event.Title}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="form-group">

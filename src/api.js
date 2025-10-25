@@ -45,17 +45,26 @@ function getAuthHeaders() {
 
 async function request(path, options) {
   let resp;
+  const fullUrl = `${API_BASE}${path}`;
+  console.log('API Request - URL:', fullUrl);
+  console.log('API Request - Method:', options?.method || 'GET');
+  console.log('API Request - API_BASE:', API_BASE);
+
   try {
-    resp = await fetch(`${API_BASE}${path}`, {
-      headers: { 
-        'Content-Type': 'application/json', 
+    resp = await fetch(fullUrl, {
+      headers: {
+        'Content-Type': 'application/json',
         ...getAuthHeaders(),
-        ...(options?.headers || {}) 
+        ...(options?.headers || {})
       },
       ...options
     });
   } catch (networkErr) {
-    const err = new Error('Unable to connect to server');
+    console.error('Network Error:', networkErr);
+    console.error('Network Error Name:', networkErr.name);
+    console.error('Network Error Message:', networkErr.message);
+
+    const err = new Error('Unable to connect to server. Please check your network connection.');
     err.cause = networkErr;
     err.status = 0;
     throw err;
@@ -1897,6 +1906,10 @@ export async function createBooking(bookingData) {
     EventId: bookingData.eventId || null,
     Notes: bookingData.notes || null
   };
+
+  console.log('CreateBooking - API_BASE:', API_BASE);
+  console.log('CreateBooking - Full URL:', `${API_BASE}/api/Bookings`);
+  console.log('CreateBooking - Payload:', payload);
 
   return await request('/api/Bookings', {
     method: 'POST',

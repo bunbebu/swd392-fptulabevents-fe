@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { labsApi, bookingApi } from '../../../api';
 import LabMemberList from './LabMemberList';
-import BookingForm from './BookingForm';
+import BookingForm from '../../booking-management/student/BookingForm';
 
 /**
  * Lab Detail Component
@@ -25,7 +25,7 @@ const LabDetail = ({ labId, onNavigateBack, isAdmin = false, userRole = 'Student
   // Booking modal states
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
   const [isSubmittingBooking, setIsSubmittingBooking] = useState(false);
-  const [bookingMessage, setBookingMessage] = useState(null); // { type: 'success' | 'error', text: string }
+  const [toast, setToast] = useState(null); // { type: 'success' | 'error', message: string }
 
   const loadLabDetail = useCallback(async () => {
     try {
@@ -82,36 +82,58 @@ const LabDetail = ({ labId, onNavigateBack, isAdmin = false, userRole = 'Student
     localStorage.setItem('favoriteLabs', JSON.stringify(favorites));
   };
 
+  // Show toast notification
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+    window.clearTimeout(showToast._tid);
+    showToast._tid = window.setTimeout(() => setToast(null), 3000);
+  };
+
   // Handle booking submission
   const handleBookingSubmit = async (bookingData) => {
     try {
       setIsSubmittingBooking(true);
-      setBookingMessage(null);
 
       console.log('Submitting booking:', bookingData);
+      console.log('Booking API endpoint: POST /api/Bookings');
+
       const result = await bookingApi.createBooking(bookingData);
       console.log('Booking created successfully:', result);
 
-      setBookingMessage({
-        type: 'success',
-        text: 'Booking submitted successfully! Your booking is pending approval.'
-      });
+      // Close modal immediately
+      setIsBookingModalOpen(false);
 
-      // Close modal after a short delay
-      setTimeout(() => {
-        setIsBookingModalOpen(false);
-        // Reload bookings if we're showing them
-        if (lab?.room?.id) {
-          loadBookingsForDate(lab.room.id, selectedDate);
-        }
-      }, 1500);
+      // Show success toast notification
+      showToast('Booking submitted successfully! Your booking is pending approval.', 'success');
+
+      // Reload bookings if we're showing them
+      if (lab?.room?.id) {
+        loadBookingsForDate(lab.room.id, selectedDate);
+      }
 
     } catch (err) {
       console.error('Error creating booking:', err);
-      setBookingMessage({
-        type: 'error',
-        text: err.message || 'Failed to create booking. Please try again.'
-      });
+      console.error('Error status:', err.status);
+      console.error('Error data:', err.data);
+      console.error('Error details:', err.details);
+
+      // Provide more detailed error message
+      let errorMessage = 'Failed to create booking. ';
+
+      if (err.status === 0) {
+        errorMessage += 'Unable to connect to server. Please check your network connection.';
+      } else if (err.status === 401) {
+        errorMessage += 'You are not authorized. Please login again.';
+      } else if (err.status === 400) {
+        errorMessage += err.message || 'Invalid booking data.';
+      } else if (err.status === 409) {
+        errorMessage += 'Room is already booked for this time slot.';
+      } else {
+        errorMessage += err.message || 'Please try again.';
+      }
+
+      // Show error toast notification
+      showToast(errorMessage, 'error');
     } finally {
       setIsSubmittingBooking(false);
     }
@@ -119,7 +141,7 @@ const LabDetail = ({ labId, onNavigateBack, isAdmin = false, userRole = 'Student
 
   // Open booking modal
   const handleOpenBookingModal = () => {
-    setBookingMessage(null);
+    setToast(null);
     setIsBookingModalOpen(true);
   };
 
@@ -330,6 +352,44 @@ const LabDetail = ({ labId, onNavigateBack, isAdmin = false, userRole = 'Student
       )}
 
       <div className="page-content">
+        {/* Toast Notification */}
+        {toast && (
+          <div
+            className="table-notification"
+            style={{
+              backgroundColor: toast.type === 'success' ? '#d1fae5' : '#fee2e2',
+              color: toast.type === 'success' ? '#065f46' : '#dc2626',
+              border: toast.type === 'success' ? '1px solid #a7f3d0' : '1px solid #fecaca',
+              padding: '12px 16px',
+              borderRadius: '8px',
+              marginBottom: '20px',
+              fontSize: '14px',
+              fontWeight: '500',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              {toast.type === 'success' ? (
+                <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              ) : (
+                <path d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              )}
+            </svg>
+            {toast.message}
+          </div>
+        )}
+
         <div className="room-detail-content">
         <div className="detail-card">
           <div className="detail-card-header">
@@ -563,7 +623,7 @@ const LabDetail = ({ labId, onNavigateBack, isAdmin = false, userRole = 'Student
           isOpen={isBookingModalOpen}
           onClose={() => {
             setIsBookingModalOpen(false);
-            setBookingMessage(null);
+            setToast(null);
           }}
           onSubmit={handleBookingSubmit}
           roomInfo={{
@@ -572,45 +632,6 @@ const LabDetail = ({ labId, onNavigateBack, isAdmin = false, userRole = 'Student
           }}
           isSubmitting={isSubmittingBooking}
         />
-      )}
-
-      {/* Success/Error Message Toast */}
-      {bookingMessage && (
-        <div
-          style={{
-            position: 'fixed',
-            top: '20px',
-            right: '20px',
-            padding: '16px 20px',
-            borderRadius: '8px',
-            background: bookingMessage.type === 'success' ? '#10b981' : '#ef4444',
-            color: 'white',
-            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
-            zIndex: 1001,
-            maxWidth: '400px',
-            animation: 'slideInRight 0.3s ease-out',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px'
-          }}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            {bookingMessage.type === 'success' ? (
-              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-            ) : (
-              <circle cx="12" cy="12" r="10"></circle>
-            )}
-            {bookingMessage.type === 'success' ? (
-              <polyline points="22 4 12 14.01 9 11.01"></polyline>
-            ) : (
-              <>
-                <line x1="15" y1="9" x2="9" y2="15"></line>
-                <line x1="9" y1="9" x2="15" y2="15"></line>
-              </>
-            )}
-          </svg>
-          <span>{bookingMessage.text}</span>
-        </div>
       )}
     </div>
   );

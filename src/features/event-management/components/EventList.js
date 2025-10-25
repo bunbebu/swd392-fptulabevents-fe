@@ -405,10 +405,10 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
         }} onSuccess={handleEditEventSuccess} />
       ) : (
         <>
-          <div className="room-list-header">
-            <h2>Event Management</h2>
-            {isAdmin && (
-              <button 
+          {isAdmin && (
+            <div className="room-list-header">
+              <h2>Event Management</h2>
+              <button
                 className="btn-new-booking"
                 onClick={() => setShowCreatePage(true)}
                 disabled={actionLoading}
@@ -419,8 +419,8 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
                 </svg>
                 Create New Event
               </button>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Success/Error Notification above table */}
           {toast && (
