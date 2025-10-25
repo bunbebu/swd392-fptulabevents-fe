@@ -15,11 +15,8 @@ const LabDetail = ({ labId, onNavigateBack, isAdmin = false, userRole = 'Student
   const [lab, setLab] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  
-  // Calendar states for student view
-  const [selectedDate, setSelectedDate] = useState(new Date());
-  const [bookings, setBookings] = useState([]);
-  const [loadingBookings, setLoadingBookings] = useState(false);
+
+  // Favorite state for student view
   const [isFavorite, setIsFavorite] = useState(false);
 
   // Booking modal states
@@ -41,32 +38,6 @@ const LabDetail = ({ labId, onNavigateBack, isAdmin = false, userRole = 'Student
       setLoading(false);
     }
   }, [labId]);
-
-  // Load bookings for a specific date
-  const loadBookingsForDate = async (roomId, date) => {
-    try {
-      setLoadingBookings(true);
-      const startOfDay = new Date(date);
-      startOfDay.setHours(0, 0, 0, 0);
-      
-      const endOfDay = new Date(date);
-      endOfDay.setHours(23, 59, 59, 999);
-      
-      const response = await bookingApi.getBookings({
-        roomId: roomId,
-        from: startOfDay.toISOString(),
-        to: endOfDay.toISOString()
-      });
-      
-      const bookingsData = Array.isArray(response) ? response : (response?.data || []);
-      setBookings(bookingsData);
-    } catch (err) {
-      console.error('Error loading bookings:', err);
-      setBookings([]);
-    } finally {
-      setLoadingBookings(false);
-    }
-  };
 
   // Toggle favorite
   const toggleFavorite = () => {
@@ -105,11 +76,6 @@ const LabDetail = ({ labId, onNavigateBack, isAdmin = false, userRole = 'Student
 
       // Show success toast notification
       showToast('Booking submitted successfully! Your booking is pending approval.', 'success');
-
-      // Reload bookings if we're showing them
-      if (lab?.room?.id) {
-        loadBookingsForDate(lab.room.id, selectedDate);
-      }
 
     } catch (err) {
       console.error('Error creating booking:', err);
@@ -154,15 +120,8 @@ const LabDetail = ({ labId, onNavigateBack, isAdmin = false, userRole = 'Student
   // Load lab details
   useEffect(() => {
     loadLabDetail();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [labId]);
-
-  // Load bookings when date changes (for student view)
-  useEffect(() => {
-    const roomId = lab?.room?.id || lab?.room?.Id || lab?.Room?.id || lab?.Room?.Id;
-    if (!isAdmin && roomId) {
-      loadBookingsForDate(roomId, selectedDate);
-    }
-  }, [selectedDate, lab?.room?.id, lab?.room?.Id, lab?.Room?.id, lab?.Room?.Id, isAdmin, loadBookingsForDate]);
 
   const getStatusBadgeClass = (status) => {
     switch (status?.toString()) {
@@ -185,58 +144,6 @@ const LabDetail = ({ labId, onNavigateBack, isAdmin = false, userRole = 'Student
       hour: '2-digit',
       minute: '2-digit'
     });
-  };
-
-  // Render calendar slots for student view
-  const renderCalendarSlots = () => {
-    const hours = Array.from({ length: 24 }, (_, i) => i);
-    const slots = Array.from({ length: 48 }, (_, i) => ({
-      hour: Math.floor(i / 2),
-      minute: (i % 2) * 30,
-      isOccupied: false
-    }));
-
-    // Mark occupied slots based on bookings
-    bookings.forEach(booking => {
-      const startTime = new Date(booking.StartTime || booking.startTime);
-      const endTime = new Date(booking.EndTime || booking.endTime);
-      
-      const startHour = startTime.getHours();
-      const startMinute = startTime.getMinutes();
-      const endHour = endTime.getHours();
-      const endMinute = endTime.getMinutes();
-      
-      slots.forEach(slot => {
-        const slotTime = slot.hour * 60 + slot.minute;
-        const startSlotTime = startHour * 60 + startMinute;
-        const endSlotTime = endHour * 60 + endMinute;
-        
-        if (slotTime >= startSlotTime && slotTime < endSlotTime) {
-          slot.isOccupied = true;
-        }
-      });
-    });
-
-    return (
-      <div className="calendar-slots">
-        {hours.map(hour => (
-          <div key={hour} className="hour-row">
-            <div className="hour-label">{hour.toString().padStart(2, '0')}:00</div>
-            <div className="hour-slots">
-              {slots.filter(s => s.hour === hour).map((slot, idx) => (
-                <div
-                  key={`${hour}-${idx}`}
-                  className={`time-slot ${slot.isOccupied ? 'occupied' : 'available'}`}
-                  title={slot.isOccupied ? 'Occupied' : 'Available'}
-                >
-                  {idx === 0 ? '00' : '30'}
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    );
   };
 
   if (loading) {

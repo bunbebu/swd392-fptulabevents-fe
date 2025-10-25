@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { authApi, bookingApi, eventApi, roomsApi, labsApi, notificationApi } from '../../api';
+import { authApi, bookingApi, eventApi, labsApi, notificationApi, reportsApi } from '../../api';
 import LabList from '../lab-management/components/LabList';
 import LabDetail from '../lab-management/components/LabDetail';
 import EventList from '../event-management/components/EventList';
 import BookingList from '../booking-management/components/BookingList';
 import UserProfile from '../user-management/student/UserProfile';
 import UserNotifications from '../notification-management/user/UserNotifications';
+import UserReportForm from '../reports-management/user/UserReportForm';
+import UserReports from '../reports-management/user/UserReports';
 
 function Home({ user: userProp }) {
   const [user, setUser] = useState(userProp);
@@ -23,9 +25,11 @@ function Home({ user: userProp }) {
   const [availableLabs, setAvailableLabs] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [notificationDropdownOpen, setNotificationDropdownOpen] = useState(false);
-  
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [toast, setToast] = useState(null);
+
   // Loading states
-  const [loading, setLoading] = useState(true);
   const [loadingData, setLoadingData] = useState(false);
 
 
@@ -213,6 +217,7 @@ function Home({ user: userProp }) {
     } else if (activeTab === 'labs') {
       loadLabsData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, user]);
 
   // Close dropdown when clicking outside
@@ -322,6 +327,13 @@ function Home({ user: userProp }) {
     }
   };
 
+  // Toast notification system
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+    window.clearTimeout(showToast._tid);
+    showToast._tid = window.setTimeout(() => setToast(null), 3000);
+  };
+
   // Load notifications
   const loadNotifications = async () => {
     try {
@@ -333,6 +345,21 @@ function Home({ user: userProp }) {
     } catch (error) {
       console.error('Error loading notifications:', error);
       setNotifications([]);
+    }
+  };
+
+  // Handle report submission
+  const handleReportSubmit = async (reportData) => {
+    try {
+      setReportLoading(true);
+      await reportsApi.createReport(reportData);
+      setShowReportModal(false);
+      showToast('Report created successfully!', 'success');
+    } catch (error) {
+      console.error('Error creating report:', error);
+      showToast('Failed to create report. Please try again.', 'error');
+    } finally {
+      setReportLoading(false);
     }
   };
 
@@ -478,6 +505,16 @@ function Home({ user: userProp }) {
       )
     },
     {
+      id: 'reports',
+      label: 'My Reports',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" width="1.125rem" height="1.125rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path>
+          <line x1="4" y1="22" x2="4" y2="15"></line>
+        </svg>
+      )
+    },
+    {
       id: 'profile',
       label: 'Profile',
       icon: (
@@ -502,6 +539,8 @@ function Home({ user: userProp }) {
         return renderBookings();
       case 'notifications':
         return renderNotifications();
+      case 'reports':
+        return renderReports();
       case 'profile':
         return renderProfile();
       default:
@@ -828,6 +867,12 @@ function Home({ user: userProp }) {
     </div>
   );
 
+  const renderReports = () => (
+    <div className="home-content">
+      <UserReports />
+    </div>
+  );
+
   const renderProfile = () => (
     <UserProfile
       onNavigateBack={() => setActiveTab('dashboard')}
@@ -863,6 +908,17 @@ function Home({ user: userProp }) {
 
           {/* User Section */}
           <div className="home-header-right">
+            <button 
+              className="home-icon-btn" 
+              title="Create Report"
+              onClick={() => setShowReportModal(true)}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path>
+                <line x1="4" y1="22" x2="4" y2="15"></line>
+              </svg>
+            </button>
+
             <div 
               className="notification-dropdown-container" 
               ref={notificationDropdownRef}
@@ -1009,6 +1065,50 @@ function Home({ user: userProp }) {
         </div>
       </header>
 
+      {/* Toast Notification */}
+      {toast && (
+        <div 
+          className="table-notification"
+          style={{
+            backgroundColor: toast.type === 'success' ? '#d1fae5' : '#fee2e2',
+            color: toast.type === 'success' ? '#065f46' : '#dc2626',
+            border: toast.type === 'success' ? '1px solid #a7f3d0' : '1px solid #fecaca',
+            padding: '12px 16px',
+            borderRadius: '8px',
+            margin: '20px',
+            fontSize: '14px',
+            fontWeight: '500',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            position: 'fixed',
+            top: '80px',
+            right: '20px',
+            zIndex: 10000,
+            maxWidth: '400px',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)'
+          }}
+        >
+          <svg 
+            width="16" 
+            height="16" 
+            viewBox="0 0 24 24" 
+            fill="none" 
+            stroke="currentColor" 
+            strokeWidth="2" 
+            strokeLinecap="round" 
+            strokeLinejoin="round"
+          >
+            {toast.type === 'success' ? (
+              <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            ) : (
+              <path d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            )}
+          </svg>
+          {toast.message}
+        </div>
+      )}
+
       {/* Main Content - Full Width */}
       <main className="home-main">
         {renderContent()}
@@ -1020,6 +1120,15 @@ function Home({ user: userProp }) {
           © {new Date().getFullYear()} FPT Lab Events. All rights reserved.
         </div>
       </footer>
+
+      {/* Report Form Modal */}
+      {showReportModal && (
+        <UserReportForm
+          onSubmit={handleReportSubmit}
+          onCancel={() => setShowReportModal(false)}
+          loading={reportLoading}
+        />
+      )}
     </div>
   );
 }

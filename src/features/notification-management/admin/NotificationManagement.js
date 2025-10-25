@@ -18,6 +18,7 @@ const NotificationManagement = ({ userRole = 'Admin', onSelectNotification, onVi
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(8);
   const [totalPages, setTotalPages] = useState(1);
+  // eslint-disable-next-line no-unused-vars
   const [totalNotifications, setTotalNotifications] = useState(0);
   // eslint-disable-next-line no-unused-vars
   const [stats, setStats] = useState({ total: 0, active: 0, expired: 0 });

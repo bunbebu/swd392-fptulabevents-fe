@@ -1767,10 +1767,16 @@ export async function getUserReportById(id) {
  * @returns {Promise<Object>} Created report
  */
 export async function createReport(reportData) {
+  // Convert string type to enum integer
+  const typeMapping = {
+    'Lab': 0,
+    'Equipment': 1
+  };
+  
   const payload = {
     Title: reportData.title,
     Description: reportData.description,
-    Type: reportData.type,
+    Type: typeMapping[reportData.type] ?? 0, // Default to Lab if unknown
     ImageUrl: reportData.imageUrl || null
   };
 
@@ -1788,10 +1794,16 @@ export async function createReport(reportData) {
  * @returns {Promise<Object>} Updated report
  */
 export async function updateReport(id, reportData) {
+  // Convert string type to enum integer
+  const typeMapping = {
+    'Lab': 0,
+    'Equipment': 1
+  };
+  
   const payload = {
     Title: reportData.title,
     Description: reportData.description,
-    Type: reportData.type,
+    Type: reportData.type ? typeMapping[reportData.type] : undefined,
     ImageUrl: reportData.imageUrl || null
   };
 

@@ -91,6 +91,7 @@ const BookingList = ({
         onToastShown();
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialToast, onToastShown]);
 
   // Load booking data with pagination

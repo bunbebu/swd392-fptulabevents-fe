@@ -22,7 +22,6 @@ const ReportList = ({ isAdmin = false, onSelectReport, onViewReport, externalToa
   const [pageSize] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
   const [totalReports, setTotalReports] = useState(0);
-  const [toast, setToast] = useState(null);
   const [selectedReportId, setSelectedReportId] = useState(null);
   const [showDetailPage, setShowDetailPage] = useState(false);
 
@@ -39,12 +38,6 @@ const ReportList = ({ isAdmin = false, onSelectReport, onViewReport, externalToa
     status: ''
     // Don't include page/pageSize here for client-side pagination
   });
-
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type });
-    window.clearTimeout(showToast._tid);
-    showToast._tid = window.setTimeout(() => setToast(null), 3000);
-  };
 
   // Load ALL reports (client-side pagination)
   const loadReports = useCallback(async () => {
@@ -274,18 +267,15 @@ const ReportList = ({ isAdmin = false, onSelectReport, onViewReport, externalToa
 
   return (
     <div className="room-list-container">
-      <div className="room-list-header">
-        <h2>{isAdmin ? 'Reports Management' : 'My Reports'}</h2>
-      </div>
 
       {/* Success/Error Notification */}
-      {(externalToast || toast) && (
+      {externalToast && (
         <div
           className="table-notification"
           style={{
-            backgroundColor: (externalToast || toast).type === 'success' ? '#d1fae5' : '#fee2e2',
-            color: (externalToast || toast).type === 'success' ? '#065f46' : '#dc2626',
-            border: (externalToast || toast).type === 'success' ? '1px solid #a7f3d0' : '1px solid #fecaca',
+            backgroundColor: externalToast.type === 'success' ? '#d1fae5' : '#fee2e2',
+            color: externalToast.type === 'success' ? '#065f46' : '#dc2626',
+            border: externalToast.type === 'success' ? '1px solid #a7f3d0' : '1px solid #fecaca',
             padding: '12px 16px',
             borderRadius: '8px',
             marginBottom: '20px',
@@ -306,13 +296,13 @@ const ReportList = ({ isAdmin = false, onSelectReport, onViewReport, externalToa
             strokeLinecap="round"
             strokeLinejoin="round"
           >
-            {(externalToast || toast).type === 'success' ? (
+            {externalToast.type === 'success' ? (
               <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
             ) : (
               <path d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
             )}
           </svg>
-          {(externalToast || toast).message}
+          {externalToast.message}
         </div>
       )}
 
@@ -329,7 +319,6 @@ const ReportList = ({ isAdmin = false, onSelectReport, onViewReport, externalToa
 
       <div className="room-list-stats">
         <span>Total reports: {totalReports}</span>
-        <span>Page {currentPage} / {totalPages}</span>
         <span style={{ marginLeft: '10px', fontSize: '12px', color: '#666' }}>
           (All: {allReports.length}, Showing: {reports.length})
         </span>

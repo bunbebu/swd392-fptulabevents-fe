@@ -80,18 +80,10 @@ const UserReports = () => {
 
   return (
     <div className="admin-content">
-      {/* Toast Notification */}
-      {toast && (
-        <div className={`toast toast-${toast.type}`}>
-          {toast.message}
-        </div>
-      )}
-
       {/* Header */}
       <div className="content-header">
         <div>
           <h2>My Reports</h2>
-          <p>Create and manage your reports</p>
         </div>
         <button 
           className="btn-primary"
@@ -104,6 +96,44 @@ const UserReports = () => {
           Create New Report
         </button>
       </div>
+
+      {/* Toast Notification */}
+      {toast && (
+        <div 
+          className="table-notification"
+          style={{
+            backgroundColor: toast.type === 'success' ? '#d1fae5' : '#fee2e2',
+            color: toast.type === 'success' ? '#065f46' : '#dc2626',
+            border: toast.type === 'success' ? '1px solid #a7f3d0' : '1px solid #fecaca',
+            padding: '12px 16px',
+            borderRadius: '8px',
+            marginBottom: '20px',
+            fontSize: '14px',
+            fontWeight: '500',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+          }}
+        >
+          <svg 
+            width="16" 
+            height="16" 
+            viewBox="0 0 24 24" 
+            fill="none" 
+            stroke="currentColor" 
+            strokeWidth="2" 
+            strokeLinecap="round" 
+            strokeLinejoin="round"
+          >
+            {toast.type === 'success' ? (
+              <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            ) : (
+              <path d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            )}
+          </svg>
+          {toast.message}
+        </div>
+      )}
 
       {/* Report List */}
       <ReportList 

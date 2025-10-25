@@ -101,9 +101,9 @@ const UserReportForm = ({ report, onSubmit, onCancel, loading = false }) => {
           <button className="modal-close" onClick={onCancel} disabled={loading}>×</button>
         </div>
 
-        <form onSubmit={handleSubmit} className="form-content">
+        <form onSubmit={handleSubmit} className="form-content" style={{ padding: '2rem' }}>
           <div className="form-group">
-            <label htmlFor="title">Report Title *</label>
+            <label htmlFor="title">Report Title <span style={{ color: 'red' }}>*</span></label>
             <input
               type="text"
               id="title"
@@ -118,7 +118,7 @@ const UserReportForm = ({ report, onSubmit, onCancel, loading = false }) => {
           </div>
 
           <div className="form-group">
-            <label htmlFor="type">Report Type *</label>
+            <label htmlFor="type">Report Type <span style={{ color: 'red' }}>*</span></label>
             <select
               id="type"
               name="type"
@@ -137,7 +137,7 @@ const UserReportForm = ({ report, onSubmit, onCancel, loading = false }) => {
           </div>
 
           <div className="form-group">
-            <label htmlFor="description">Description *</label>
+            <label htmlFor="description">Description <span style={{ color: 'red' }}>*</span></label>
             <textarea
               id="description"
               name="description"

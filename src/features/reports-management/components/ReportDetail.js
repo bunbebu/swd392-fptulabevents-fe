@@ -16,6 +16,7 @@ const ReportDetail = ({ reportId, onNavigateBack, isAdmin = false }) => {
 
   useEffect(() => {
     loadReportDetail();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportId]);
 
   const loadReportDetail = async () => {
