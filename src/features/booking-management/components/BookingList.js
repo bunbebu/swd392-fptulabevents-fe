@@ -39,9 +39,16 @@ const BookingList = ({
   const [actionLoading, setActionLoading] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
 
   const isAdmin = userRole === 'Admin';
+
+  // Local filter states (for input fields before applying)
+  const [localFilters, setLocalFilters] = useState({
+    searchTerm: '',
+    status: '',
+    from: '',
+    to: ''
+  });
 
   // API filter states (excluding page/pageSize - those are managed separately)
   const [apiFilters, setApiFilters] = useState({
@@ -361,33 +368,47 @@ const BookingList = ({
 
   // Apply filters
   const applyFilters = () => {
+    // Copy local filters to API filters
+    setApiFilters(prev => ({
+      ...prev,
+      searchTerm: localFilters.searchTerm,
+      status: localFilters.status,
+      from: localFilters.from,
+      to: localFilters.to
+    }));
     setCurrentPage(1);
     loadBookings(1);
   };
 
   // Clear filters
   const clearFilters = () => {
-    setApiFilters({
-      roomId: '',
-      userId: '',
+    setLocalFilters({
+      searchTerm: '',
       status: '',
       from: '',
       to: ''
     });
-    setSearchTerm('');
+    setApiFilters({
+      roomId: '',
+      userId: !isAdmin && userId ? userId : '',
+      status: '',
+      from: '',
+      to: '',
+      searchTerm: ''
+    });
     setCurrentPage(1);
     loadBookings(1);
   };
 
-  // Filter bookings by search term (client-side filtering)
+  // Filter bookings by search term (client-side filtering using applied filters)
   const filteredBookings = bookings.filter(booking => {
-    if (!searchTerm.trim()) return true;
-    
-    const searchLower = searchTerm.toLowerCase();
+    if (!apiFilters.searchTerm || !apiFilters.searchTerm.trim()) return true;
+
+    const searchLower = apiFilters.searchTerm.toLowerCase();
     const bookingId = typeof booking.id === 'string' && booking.id.length > 8
       ? `${booking.id.substring(0, 8)}...`
       : `#${booking.id}`;
-    
+
     return (
       bookingId.toLowerCase().includes(searchLower) ||
       booking.roomName?.toLowerCase().includes(searchLower) ||
@@ -495,8 +516,8 @@ const BookingList = ({
 
         <div className="room-list-stats">
           <span>
-            {searchTerm && isAdmin 
-              ? `Showing ${filteredBookings.length} of ${totalBookings} bookings` 
+            {apiFilters.searchTerm && isAdmin
+              ? `Showing ${filteredBookings.length} of ${totalBookings} bookings`
               : `Total bookings: ${totalBookings}`}
           </span>
           <span>Page {currentPage} / {totalPages}</span>
@@ -514,14 +535,14 @@ const BookingList = ({
                 <input
                   type="text"
                   placeholder="Search by ID, room, user, or purpose..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  value={localFilters.searchTerm}
+                  onChange={(e) => setLocalFilters(prev => ({ ...prev, searchTerm: e.target.value }))}
                   className="search-input"
                 />
-                {searchTerm && (
-                  <button 
+                {localFilters.searchTerm && (
+                  <button
                     className="clear-search"
-                    onClick={() => setSearchTerm('')}
+                    onClick={() => setLocalFilters(prev => ({ ...prev, searchTerm: '' }))}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M18 6L6 18"></path>
@@ -534,8 +555,8 @@ const BookingList = ({
 
             <div className="filter-group">
               <select
-                value={apiFilters.status}
-                onChange={(e) => setApiFilters(prev => ({ ...prev, status: e.target.value }))}
+                value={localFilters.status}
+                onChange={(e) => setLocalFilters(prev => ({ ...prev, status: e.target.value }))}
                 className="filter-select"
               >
                 <option value="">All Status</option>
@@ -548,15 +569,15 @@ const BookingList = ({
               <input
                 type="date"
                 placeholder="From Date"
-                value={apiFilters.from}
-                onChange={(e) => setApiFilters(prev => ({ ...prev, from: e.target.value }))}
+                value={localFilters.from}
+                onChange={(e) => setLocalFilters(prev => ({ ...prev, from: e.target.value }))}
                 className="filter-input"
               />
               <input
                 type="date"
                 placeholder="To Date"
-                value={apiFilters.to}
-                onChange={(e) => setApiFilters(prev => ({ ...prev, to: e.target.value }))}
+                value={localFilters.to}
+                onChange={(e) => setLocalFilters(prev => ({ ...prev, to: e.target.value }))}
                 className="filter-input"
               />
             </div>
@@ -619,7 +640,7 @@ const BookingList = ({
               ) : filteredBookings.length === 0 ? (
                 <tr>
                   <td colSpan={isAdmin ? "8" : "7"} className="no-data">
-                    {searchTerm ? 'No bookings found matching your search' : 'No booking data'}
+                    {apiFilters.searchTerm ? 'No bookings found matching your search' : 'No booking data'}
                   </td>
                 </tr>
               ) : (

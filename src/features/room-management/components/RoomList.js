@@ -38,7 +38,15 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [confirmDeleteRoom, setConfirmDeleteRoom] = useState(null);
-  
+
+  // Local filter states (for input fields before applying)
+  const [localFilters, setLocalFilters] = useState({
+    searchTerm: '',
+    status: '',
+    minCapacity: '',
+    maxCapacity: ''
+  });
+
   // API filter states
   const [apiFilters, setApiFilters] = useState({
     name: '',
@@ -303,12 +311,27 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
 
   // Apply filters
   const applyFilters = () => {
+    // Copy local filters to API filters
+    setApiFilters(prev => ({
+      ...prev,
+      name: localFilters.searchTerm,
+      location: localFilters.searchTerm,
+      status: localFilters.status,
+      minCapacity: localFilters.minCapacity,
+      maxCapacity: localFilters.maxCapacity
+    }));
     setCurrentPage(1);
     loadRooms(1);
   };
 
   // Clear filters
   const clearFilters = () => {
+    setLocalFilters({
+      searchTerm: '',
+      status: '',
+      minCapacity: '',
+      maxCapacity: ''
+    });
     setApiFilters({
       name: '',
       location: '',
@@ -457,24 +480,22 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                 <input
                   type="text"
                   placeholder="Search by name or location..."
-                  value={apiFilters.name || apiFilters.location || ''}
+                  value={localFilters.searchTerm}
                   onChange={(e) => {
                     const value = e.target.value;
-                    setApiFilters(prev => ({ 
-                      ...prev, 
-                      name: value,
-                      location: value
+                    setLocalFilters(prev => ({
+                      ...prev,
+                      searchTerm: value
                     }));
                   }}
                   className="search-input"
                 />
-                {(apiFilters.name || apiFilters.location) && (
-                  <button 
+                {localFilters.searchTerm && (
+                  <button
                     className="clear-search"
-                    onClick={() => setApiFilters(prev => ({ 
-                      ...prev, 
-                      name: '', 
-                      location: '' 
+                    onClick={() => setLocalFilters(prev => ({
+                      ...prev,
+                      searchTerm: ''
                     }))}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -487,8 +508,8 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
 
               <div className="filter-group">
                 <select
-                  value={apiFilters.status}
-                  onChange={(e) => setApiFilters(prev => ({ ...prev, status: e.target.value }))}
+                  value={localFilters.status}
+                  onChange={(e) => setLocalFilters(prev => ({ ...prev, status: e.target.value }))}
                   className="filter-select"
                 >
                   <option value="">All Status</option>
@@ -500,15 +521,15 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                 <input
                   type="number"
                   placeholder="Min Capacity"
-                  value={apiFilters.minCapacity}
-                  onChange={(e) => setApiFilters(prev => ({ ...prev, minCapacity: e.target.value }))}
+                  value={localFilters.minCapacity}
+                  onChange={(e) => setLocalFilters(prev => ({ ...prev, minCapacity: e.target.value }))}
                   className="filter-input"
                 />
                 <input
                   type="number"
                   placeholder="Max Capacity"
-                  value={apiFilters.maxCapacity}
-                  onChange={(e) => setApiFilters(prev => ({ ...prev, maxCapacity: e.target.value }))}
+                  value={localFilters.maxCapacity}
+                  onChange={(e) => setLocalFilters(prev => ({ ...prev, maxCapacity: e.target.value }))}
                   className="filter-input"
                 />
               </div>

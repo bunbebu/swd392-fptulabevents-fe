@@ -51,7 +51,15 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
   const [selectedEquipment, setSelectedEquipment] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [confirmDeleteEquipment, setConfirmDeleteEquipment] = useState(null);
-  
+
+  // Local filter states (for input fields before applying)
+  const [localFilters, setLocalFilters] = useState({
+    searchTerm: '',
+    type: '',
+    status: '',
+    roomId: ''
+  });
+
   // API filter states
   const [apiFilters, setApiFilters] = useState({
     name: '',
@@ -256,12 +264,27 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
 
   // Apply filters
   const applyFilters = () => {
+    // Copy local filters to API filters
+    setApiFilters(prev => ({
+      ...prev,
+      name: localFilters.searchTerm,
+      serialNumber: localFilters.searchTerm,
+      type: localFilters.type,
+      status: localFilters.status,
+      roomId: localFilters.roomId
+    }));
     setCurrentPage(1);
     loadEquipments(1);
   };
 
   // Clear filters
   const clearFilters = () => {
+    setLocalFilters({
+      searchTerm: '',
+      type: '',
+      status: '',
+      roomId: ''
+    });
     setApiFilters({
       name: '',
       serialNumber: '',
@@ -428,26 +451,22 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
           <input
             type="text"
               placeholder="Search by name, serial number, or room name..."
-              value={apiFilters.name || apiFilters.serialNumber || apiFilters.roomId || ''}
+              value={localFilters.searchTerm}
               onChange={(e) => {
                 const value = e.target.value;
-                setApiFilters(prev => ({ 
-                  ...prev, 
-                  name: value,
-                  serialNumber: value,
-                  roomId: value
+                setLocalFilters(prev => ({
+                  ...prev,
+                  searchTerm: value
                 }));
               }}
             className="search-input"
           />
-            {(apiFilters.name || apiFilters.serialNumber || apiFilters.roomId) && (
-              <button 
+            {localFilters.searchTerm && (
+              <button
                 className="clear-search"
-                onClick={() => setApiFilters(prev => ({ 
-                  ...prev, 
-                  name: '', 
-                  serialNumber: '', 
-                  roomId: '' 
+                onClick={() => setLocalFilters(prev => ({
+                  ...prev,
+                  searchTerm: ''
                 }))}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -460,8 +479,8 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
 
         <div className="filter-group">
           <select
-              value={apiFilters.type}
-              onChange={(e) => setApiFilters(prev => ({ ...prev, type: e.target.value }))}
+              value={localFilters.type}
+              onChange={(e) => setLocalFilters(prev => ({ ...prev, type: e.target.value }))}
             className="filter-select"
           >
               <option value="">All Types</option>
@@ -472,8 +491,8 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
               ))}
           </select>
           <select
-              value={apiFilters.status}
-              onChange={(e) => setApiFilters(prev => ({ ...prev, status: e.target.value }))}
+              value={localFilters.status}
+              onChange={(e) => setLocalFilters(prev => ({ ...prev, status: e.target.value }))}
             className="filter-select"
           >
               <option value="">All Status</option>

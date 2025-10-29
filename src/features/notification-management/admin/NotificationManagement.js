@@ -32,7 +32,14 @@ const NotificationManagement = ({ userRole = 'Admin', onSelectNotification, onVi
   const [confirmDeleteNotification, setConfirmDeleteNotification] = useState(null);
   // eslint-disable-next-line no-unused-vars
   const [actionLoading, setActionLoading] = useState(false);
-  
+
+  // Local filter states (for input fields before applying)
+  const [localFilters, setLocalFilters] = useState({
+    searchTerm: '',
+    status: '',
+    targetGroup: ''
+  });
+
   // API filter states
   const [apiFilters, setApiFilters] = useState({
     title: '',
@@ -214,12 +221,25 @@ const NotificationManagement = ({ userRole = 'Admin', onSelectNotification, onVi
 
   // Apply filters
   const applyFilters = () => {
+    // Copy local filters to API filters
+    setApiFilters(prev => ({
+      ...prev,
+      title: localFilters.searchTerm,
+      content: localFilters.searchTerm,
+      status: localFilters.status,
+      targetGroup: localFilters.targetGroup
+    }));
     setCurrentPage(1);
     loadNotifications(1);
   };
 
   // Clear filters
   const clearFilters = () => {
+    setLocalFilters({
+      searchTerm: '',
+      status: '',
+      targetGroup: ''
+    });
     setApiFilters({
       title: '',
       content: '',
@@ -379,24 +399,22 @@ const NotificationManagement = ({ userRole = 'Admin', onSelectNotification, onVi
             <input
               type="text"
                   placeholder="Search by title or content..."
-                  value={apiFilters.title || apiFilters.content || ''}
+                  value={localFilters.searchTerm}
                   onChange={(e) => {
                     const value = e.target.value;
-                    setApiFilters(prev => ({ 
-                      ...prev, 
-                      title: value,
-                      content: value
+                    setLocalFilters(prev => ({
+                      ...prev,
+                      searchTerm: value
                     }));
                   }}
               className="search-input"
             />
-                {(apiFilters.title || apiFilters.content) && (
-              <button 
+                {localFilters.searchTerm && (
+              <button
                 className="clear-search"
-                    onClick={() => setApiFilters(prev => ({ 
-                      ...prev, 
-                      title: '', 
-                      content: '' 
+                    onClick={() => setLocalFilters(prev => ({
+                      ...prev,
+                      searchTerm: ''
                     }))}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -409,8 +427,8 @@ const NotificationManagement = ({ userRole = 'Admin', onSelectNotification, onVi
 
           <div className="filter-group">
             <select
-                  value={apiFilters.status}
-                  onChange={(e) => setApiFilters(prev => ({ ...prev, status: e.target.value }))}
+                  value={localFilters.status}
+                  onChange={(e) => setLocalFilters(prev => ({ ...prev, status: e.target.value }))}
               className="filter-select"
             >
                   <option value="">All Status</option>
@@ -420,8 +438,8 @@ const NotificationManagement = ({ userRole = 'Admin', onSelectNotification, onVi
             </select>
 
             <select
-                  value={apiFilters.targetGroup}
-                  onChange={(e) => setApiFilters(prev => ({ ...prev, targetGroup: e.target.value }))}
+                  value={localFilters.targetGroup}
+                  onChange={(e) => setLocalFilters(prev => ({ ...prev, targetGroup: e.target.value }))}
               className="filter-select"
             >
                   <option value="">All Target Groups</option>

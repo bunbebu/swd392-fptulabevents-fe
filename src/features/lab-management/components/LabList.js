@@ -41,7 +41,15 @@ const LabList = ({
   const [selectedLab, setSelectedLab] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [confirmDeleteLab, setConfirmDeleteLab] = useState(null);
-  
+
+  // Local filter states (for input fields before applying)
+  const [localFilters, setLocalFilters] = useState({
+    searchTerm: '',
+    status: '',
+    minCapacity: '',
+    maxCapacity: ''
+  });
+
   // API filter states
   const [apiFilters, setApiFilters] = useState({
     name: '',
@@ -386,12 +394,27 @@ const LabList = ({
 
   // Apply filters
   const applyFilters = () => {
+    // Copy local filters to API filters
+    setApiFilters(prev => ({
+      ...prev,
+      name: localFilters.searchTerm,
+      location: localFilters.searchTerm,
+      status: localFilters.status,
+      minCapacity: localFilters.minCapacity,
+      maxCapacity: localFilters.maxCapacity
+    }));
     setCurrentPage(1);
     loadLabs(1);
   };
 
   // Clear filters
   const clearFilters = () => {
+    setLocalFilters({
+      searchTerm: '',
+      status: '',
+      minCapacity: '',
+      maxCapacity: ''
+    });
     setApiFilters({
       name: '',
       location: '',
@@ -528,24 +551,22 @@ const LabList = ({
                 <input
                   type="text"
                   placeholder="Search by name or location..."
-                  value={apiFilters.name || apiFilters.location || ''}
+                  value={localFilters.searchTerm}
                   onChange={(e) => {
                     const value = e.target.value;
-                    setApiFilters(prev => ({
+                    setLocalFilters(prev => ({
                       ...prev,
-                      name: value,
-                      location: value
+                      searchTerm: value
                     }));
                   }}
                   className="search-input"
                 />
-                {(apiFilters.name || apiFilters.location) && (
+                {localFilters.searchTerm && (
                   <button
                     className="clear-search"
-                    onClick={() => setApiFilters(prev => ({
+                    onClick={() => setLocalFilters(prev => ({
                       ...prev,
-                      name: '',
-                      location: ''
+                      searchTerm: ''
                     }))}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -558,8 +579,8 @@ const LabList = ({
 
               <div className="filter-group">
                 <select
-                  value={apiFilters.status}
-                  onChange={(e) => setApiFilters(prev => ({ ...prev, status: e.target.value }))}
+                  value={localFilters.status}
+                  onChange={(e) => setLocalFilters(prev => ({ ...prev, status: e.target.value }))}
                   className="filter-select"
                 >
                   <option value="">All Status</option>
@@ -569,15 +590,15 @@ const LabList = ({
                 <input
                   type="number"
                   placeholder="Min Capacity"
-                  value={apiFilters.minCapacity}
-                  onChange={(e) => setApiFilters(prev => ({ ...prev, minCapacity: e.target.value }))}
+                  value={localFilters.minCapacity}
+                  onChange={(e) => setLocalFilters(prev => ({ ...prev, minCapacity: e.target.value }))}
                   className="filter-input"
                 />
                 <input
                   type="number"
                   placeholder="Max Capacity"
-                  value={apiFilters.maxCapacity}
-                  onChange={(e) => setApiFilters(prev => ({ ...prev, maxCapacity: e.target.value }))}
+                  value={localFilters.maxCapacity}
+                  onChange={(e) => setLocalFilters(prev => ({ ...prev, maxCapacity: e.target.value }))}
                   className="filter-input"
                 />
               </div>

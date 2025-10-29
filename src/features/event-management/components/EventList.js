@@ -37,7 +37,15 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
   // eslint-disable-next-line no-unused-vars
   const [actionLoading, setActionLoading] = useState(false);
   const [confirmDeleteEvent, setConfirmDeleteEvent] = useState(null);
-  
+
+  // Local filter states (for input fields before applying)
+  const [localFilters, setLocalFilters] = useState({
+    searchTerm: '',
+    status: '',
+    startDateFrom: '',
+    startDateTo: ''
+  });
+
   // API filter states
   const [apiFilters, setApiFilters] = useState({
     title: '',
@@ -336,12 +344,27 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
 
   // Apply filters
   const applyFilters = () => {
+    // Copy local filters to API filters
+    setApiFilters(prev => ({
+      ...prev,
+      title: localFilters.searchTerm,
+      location: localFilters.searchTerm,
+      status: localFilters.status,
+      startDateFrom: localFilters.startDateFrom,
+      startDateTo: localFilters.startDateTo
+    }));
     setCurrentPage(1);
     loadEvents(1);
   };
 
   // Clear filters
   const clearFilters = () => {
+    setLocalFilters({
+      searchTerm: '',
+      status: '',
+      startDateFrom: '',
+      startDateTo: ''
+    });
     setApiFilters({
       title: '',
       location: '',
@@ -503,24 +526,22 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
                 <input
                   type="text"
                   placeholder="Search by title or location..."
-                  value={apiFilters.title || apiFilters.location || ''}
+                  value={localFilters.searchTerm}
                   onChange={(e) => {
                     const value = e.target.value;
-                    setApiFilters(prev => ({
+                    setLocalFilters(prev => ({
                       ...prev,
-                      title: value,
-                      location: value
+                      searchTerm: value
                     }));
                   }}
                   className="search-input"
                 />
-                {(apiFilters.title || apiFilters.location) && (
+                {localFilters.searchTerm && (
                   <button
                     className="clear-search"
-                    onClick={() => setApiFilters(prev => ({
+                    onClick={() => setLocalFilters(prev => ({
                       ...prev,
-                      title: '',
-                      location: ''
+                      searchTerm: ''
                     }))}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -533,8 +554,8 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
 
               <div className="filter-group">
                 <select
-                  value={apiFilters.status}
-                  onChange={(e) => setApiFilters(prev => ({ ...prev, status: e.target.value }))}
+                  value={localFilters.status}
+                  onChange={(e) => setLocalFilters(prev => ({ ...prev, status: e.target.value }))}
                   className="filter-select"
                 >
                   <option value="">All Status</option>
