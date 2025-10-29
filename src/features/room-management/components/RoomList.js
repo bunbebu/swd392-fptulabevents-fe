@@ -321,7 +321,7 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
       maxCapacity: localFilters.maxCapacity
     }));
     setCurrentPage(1);
-    loadRooms(1);
+    // loadRooms will be called automatically by useEffect when apiFilters changes
   };
 
   // Clear filters
@@ -342,7 +342,7 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
       pageSize: 8
     });
     setCurrentPage(1);
-    loadRooms(1);
+    // loadRooms will be called automatically by useEffect when apiFilters changes
   };
 
   // Get status badge class

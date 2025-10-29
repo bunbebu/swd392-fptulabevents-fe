@@ -377,7 +377,7 @@ const BookingList = ({
       to: localFilters.to
     }));
     setCurrentPage(1);
-    loadBookings(1);
+    // loadBookings will be called automatically by useEffect when apiFilters changes
   };
 
   // Clear filters
@@ -397,7 +397,7 @@ const BookingList = ({
       searchTerm: ''
     });
     setCurrentPage(1);
-    loadBookings(1);
+    // loadBookings will be called automatically by useEffect when apiFilters changes
   };
 
   // Filter bookings by search term (client-side filtering using applied filters)

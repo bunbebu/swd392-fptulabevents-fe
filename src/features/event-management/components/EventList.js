@@ -354,7 +354,7 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
       startDateTo: localFilters.startDateTo
     }));
     setCurrentPage(1);
-    loadEvents(1);
+    // loadEvents will be called automatically by useEffect when apiFilters changes
   };
 
   // Clear filters
@@ -375,7 +375,7 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
       pageSize: 8
     });
     setCurrentPage(1);
-    loadEvents(1);
+    // loadEvents will be called automatically by useEffect when apiFilters changes
   };
 
   // Get status badge class

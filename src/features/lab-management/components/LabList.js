@@ -404,7 +404,7 @@ const LabList = ({
       maxCapacity: localFilters.maxCapacity
     }));
     setCurrentPage(1);
-    loadLabs(1);
+    // loadLabs will be called automatically by useEffect when apiFilters changes
   };
 
   // Clear filters
@@ -425,7 +425,7 @@ const LabList = ({
       pageSize: 8
     });
     setCurrentPage(1);
-    loadLabs(1);
+    // loadLabs will be called automatically by useEffect when apiFilters changes
   };
 
   // Get status badge class

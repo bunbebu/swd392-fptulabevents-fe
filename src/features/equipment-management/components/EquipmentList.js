@@ -268,13 +268,13 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
     setApiFilters(prev => ({
       ...prev,
       name: localFilters.searchTerm,
-      serialNumber: localFilters.searchTerm,
+      serialNumber: '', // Don't filter by serial number to avoid AND condition
       type: localFilters.type,
       status: localFilters.status,
       roomId: localFilters.roomId
     }));
     setCurrentPage(1);
-    loadEquipments(1);
+    // loadEquipments will be called automatically by useEffect when apiFilters changes
   };
 
   // Clear filters
@@ -295,7 +295,7 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
       pageSize: 8
     });
     setCurrentPage(1);
-    loadEquipments(1);
+    // loadEquipments will be called automatically by useEffect when apiFilters changes
   };
 
 

@@ -230,7 +230,7 @@ const NotificationManagement = ({ userRole = 'Admin', onSelectNotification, onVi
       targetGroup: localFilters.targetGroup
     }));
     setCurrentPage(1);
-    loadNotifications(1);
+    // loadNotifications will be called automatically by useEffect when apiFilters changes
   };
 
   // Clear filters
@@ -249,7 +249,7 @@ const NotificationManagement = ({ userRole = 'Admin', onSelectNotification, onVi
       pageSize: 8
     });
     setCurrentPage(1);
-    loadNotifications(1);
+    // loadNotifications will be called automatically by useEffect when apiFilters changes
   };
 
   // Status badge component
