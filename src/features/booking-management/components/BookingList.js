@@ -39,6 +39,7 @@ const BookingList = ({
   const [actionLoading, setActionLoading] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
 
   const isAdmin = userRole === 'Admin';
 
@@ -373,9 +374,27 @@ const BookingList = ({
       from: '',
       to: ''
     });
+    setSearchTerm('');
     setCurrentPage(1);
     loadBookings(1);
   };
+
+  // Filter bookings by search term (client-side filtering)
+  const filteredBookings = bookings.filter(booking => {
+    if (!searchTerm.trim()) return true;
+    
+    const searchLower = searchTerm.toLowerCase();
+    const bookingId = typeof booking.id === 'string' && booking.id.length > 8
+      ? `${booking.id.substring(0, 8)}...`
+      : `#${booking.id}`;
+    
+    return (
+      bookingId.toLowerCase().includes(searchLower) ||
+      booking.roomName?.toLowerCase().includes(searchLower) ||
+      booking.userName?.toLowerCase().includes(searchLower) ||
+      booking.purpose?.toLowerCase().includes(searchLower)
+    );
+  });
 
   if (loading) {
     return (
@@ -475,13 +494,44 @@ const BookingList = ({
         )}
 
         <div className="room-list-stats">
-          <span>Total bookings: {totalBookings}</span>
+          <span>
+            {searchTerm && isAdmin 
+              ? `Showing ${filteredBookings.length} of ${totalBookings} bookings` 
+              : `Total bookings: ${totalBookings}`}
+          </span>
           <span>Page {currentPage} / {totalPages}</span>
         </div>
 
         {/* Filter Controls */}
         <div className="filter-controls">
           <div className="filter-row">
+            {isAdmin && (
+              <div className="search-bar">
+                <svg className="search-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <path d="m21 21-4.35-4.35"></path>
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Search by ID, room, user, or purpose..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="search-input"
+                />
+                {searchTerm && (
+                  <button 
+                    className="clear-search"
+                    onClick={() => setSearchTerm('')}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M18 6L6 18"></path>
+                      <path d="M6 6l12 12"></path>
+                    </svg>
+                  </button>
+                )}
+              </div>
+            )}
+
             <div className="filter-group">
               <select
                 value={apiFilters.status}
@@ -566,14 +616,14 @@ const BookingList = ({
                     {isAdmin && <td><div className="skeleton-text"></div></td>}
                   </tr>
                 ))
-              ) : bookings.length === 0 ? (
+              ) : filteredBookings.length === 0 ? (
                 <tr>
                   <td colSpan={isAdmin ? "8" : "7"} className="no-data">
-                    No booking data
+                    {searchTerm ? 'No bookings found matching your search' : 'No booking data'}
                   </td>
                 </tr>
               ) : (
-                bookings.map((booking) => (
+                filteredBookings.map((booking) => (
                   <tr key={booking.id} className={booking.isOptimistic ? 'optimistic-row' : ''}>
                     <td>
                       {typeof booking.id === 'string' && booking.id.length > 8

@@ -141,14 +141,36 @@ function Home({ user: userProp }) {
               const isLecturerCheck = user?.roles?.includes('Lecturer') || user?.roles?.includes('Teacher');
               
               console.log('Loading available labs for user role:', userRoleCheck);
-              const response = isLecturerCheck || userRoleCheck === 'Student' 
-                ? await labsApi.getAvailableLabs()
-                : await labsApi.getLabs({ pageSize: 10 });
               
-              console.log('Labs API response:', response);
-              const labs = Array.isArray(response) ? response : (response?.data || []);
-              console.log('Parsed labs:', labs);
-              setAvailableLabs(labs);
+              // Try available labs endpoint first, fallback to regular labs if it fails
+              if (isLecturerCheck || userRoleCheck === 'Student') {
+                try {
+                  const response = await labsApi.getAvailableLabs();
+                  console.log('Available labs API response:', response);
+                  const labs = Array.isArray(response) ? response : (response?.data || response?.Data || []);
+                  console.log('Parsed available labs:', labs);
+                  setAvailableLabs(labs);
+                } catch (availableError) {
+                  // If available labs endpoint fails, try regular labs endpoint as fallback
+                  console.warn('Available labs endpoint failed, trying regular labs endpoint:', availableError.message);
+                  try {
+                    const response = await labsApi.getLabs({ pageSize: 10 });
+                    const labs = Array.isArray(response) ? response : (response?.data || response?.Data || []);
+                    console.log('Using regular labs endpoint, parsed labs:', labs);
+                    setAvailableLabs(labs);
+                  } catch (fallbackError) {
+                    console.error('Error loading labs (both endpoints failed):', fallbackError);
+                    setAvailableLabs([]);
+                  }
+                }
+              } else {
+                // Admin users use regular labs endpoint
+                const response = await labsApi.getLabs({ pageSize: 10 });
+                console.log('Labs API response:', response);
+                const labs = Array.isArray(response) ? response : (response?.data || response?.Data || []);
+                console.log('Parsed labs:', labs);
+                setAvailableLabs(labs);
+              }
             } catch (error) {
               console.error('Error loading labs:', error);
               setAvailableLabs([]);
@@ -310,15 +332,36 @@ function Home({ user: userProp }) {
       const isLecturerCheck = user?.roles?.includes('Lecturer') || user?.roles?.includes('Teacher');
       
       console.log('Loading labs data for user role:', userRoleCheck);
-      // Use getAvailableLabs API for student/lecturer, getLabs for admin
-      const response = isLecturerCheck || userRoleCheck === 'Student' 
-        ? await labsApi.getAvailableLabs()
-        : await labsApi.getLabs({ pageSize: 20 });
       
-      console.log('Labs data API response:', response);
-      const labs = Array.isArray(response) ? response : (response?.data || []);
-      console.log('Parsed labs data:', labs);
-      setAvailableLabs(labs);
+      // Try available labs endpoint first, fallback to regular labs if it fails
+      if (isLecturerCheck || userRoleCheck === 'Student') {
+        try {
+          const response = await labsApi.getAvailableLabs();
+          console.log('Available labs data API response:', response);
+          const labs = Array.isArray(response) ? response : (response?.data || response?.Data || []);
+          console.log('Parsed available labs data:', labs);
+          setAvailableLabs(labs);
+        } catch (availableError) {
+          // If available labs endpoint fails, try regular labs endpoint as fallback
+          console.warn('Available labs endpoint failed, trying regular labs endpoint:', availableError.message);
+          try {
+            const response = await labsApi.getLabs({ pageSize: 20 });
+            const labs = Array.isArray(response) ? response : (response?.data || response?.Data || []);
+            console.log('Using regular labs endpoint, parsed labs data:', labs);
+            setAvailableLabs(labs);
+          } catch (fallbackError) {
+            console.error('Error loading labs data (both endpoints failed):', fallbackError);
+            setAvailableLabs([]);
+          }
+        }
+      } else {
+        // Admin users use regular labs endpoint
+        const response = await labsApi.getLabs({ pageSize: 20 });
+        console.log('Labs data API response:', response);
+        const labs = Array.isArray(response) ? response : (response?.data || response?.Data || []);
+        console.log('Parsed labs data:', labs);
+        setAvailableLabs(labs);
+      }
     } catch (error) {
       console.error('Error loading labs:', error);
       setAvailableLabs([]);

@@ -97,13 +97,8 @@ const ReportList = ({ isAdmin = false, onSelectReport, onViewReport, externalToa
       console.log('  totalReports:', reportData.length);
       console.log('  totalPages:', calculatedTotalPages);
 
-      // Set current page to 1 and show first page
+      // Reset to page 1 - the useEffect will handle updating the displayed reports
       setCurrentPage(1);
-      const startIndex = 0;
-      const endIndex = pageSize;
-      const firstPageReports = reportData.slice(startIndex, endIndex);
-      console.log('First page reports:', firstPageReports.length, 'items');
-      setReports(firstPageReports);
     } catch (err) {
       console.error('Error loading reports:', err);
       setError(err.message || 'Unable to load report list');
@@ -121,6 +116,23 @@ const ReportList = ({ isAdmin = false, onSelectReport, onViewReport, externalToa
     loadReports();
   }, [loadReports]);
 
+  // Effect to update displayed reports when page or allReports changes
+  useEffect(() => {
+    if (allReports.length === 0) {
+      setReports([]);
+      return;
+    }
+    
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const pageReports = allReports.slice(startIndex, endIndex);
+    console.log('=== Updating displayed reports ===');
+    console.log('Current page:', currentPage);
+    console.log('Showing reports from index', startIndex, 'to', endIndex);
+    console.log('Page reports count:', pageReports.length);
+    setReports(pageReports);
+  }, [currentPage, allReports, pageSize]);
+
   // Client-side pagination handler
   const handlePageChange = (newPage) => {
     console.log('=== handlePageChange called ===');
@@ -137,20 +149,10 @@ const ReportList = ({ isAdmin = false, onSelectReport, onViewReport, externalToa
     if (newPage >= 1 && newPage <= totalPages && newPage !== currentPage) {
       console.log('✓ Pagination allowed, changing page...');
       setPaginationLoading(true);
-
-      // Simulate a small delay for better UX
+      setCurrentPage(newPage);
+      
+      // Stop loading after a short delay
       setTimeout(() => {
-        setCurrentPage(newPage);
-
-        // Calculate slice indices for client-side pagination
-        const startIndex = (newPage - 1) * pageSize;
-        const endIndex = startIndex + pageSize;
-
-        const pageReports = allReports.slice(startIndex, endIndex);
-        console.log('Showing reports from index', startIndex, 'to', endIndex);
-        console.log('Page reports count:', pageReports.length);
-
-        setReports(pageReports);
         setPaginationLoading(false);
       }, 200);
     } else {

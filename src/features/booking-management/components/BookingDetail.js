@@ -145,61 +145,194 @@ const BookingDetail = ({ bookingId, onNavigateBack, userRole = 'Student' }) => {
       case BOOKING_STATUS.PENDING:
         return 'status-badge status-pending';
       case BOOKING_STATUS.APPROVED:
-        return 'status-badge status-approved';
+        return 'status-badge status-available';
       case BOOKING_STATUS.REJECTED:
-        return 'status-badge status-rejected';
+        return 'status-badge status-unavailable';
       case BOOKING_STATUS.CANCELLED:
-        return 'status-badge status-cancelled';
+        return 'status-badge status-maintenance';
       case BOOKING_STATUS.COMPLETED:
-        return 'status-badge status-completed';
+        return 'status-badge status-occupied';
       default:
         return 'status-badge';
     }
   };
 
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
   if (loading) {
     return (
-      <div className="booking-detail-container">
-        <div className="loading">
-          <div className="loading-spinner"></div>
-          Loading booking details...
+      <div className="create-booking-page">
+        <div className="page-header">
+          <div className="header-content">
+            <button 
+              className="back-button"
+              onClick={onNavigateBack}
+              title="Back to Booking List"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 12H5"></path>
+                <path d="M12 19l-7-7 7-7"></path>
+              </svg>
+            </button>
+            <h1>Booking Details</h1>
+          </div>
+        </div>
+        <div className="page-content">
+          <div className="loading">Loading booking details...</div>
         </div>
       </div>
     );
   }
 
-  if (error || !booking) {
+  if (error) {
     return (
-      <div className="booking-detail-container">
-        <div className="error-message">
-          <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="8" x2="12" y2="12"></line>
-            <line x1="12" y1="16" x2="12.01" y2="16"></line>
-          </svg>
-          <h3>{error || 'Booking not found'}</h3>
-          <button className="btn-primary" onClick={onNavigateBack}>
-            Go Back
-          </button>
+      <div className="create-booking-page">
+        <div className="page-header">
+          <div className="header-content">
+            <button 
+              className="back-button"
+              onClick={onNavigateBack}
+              title="Back to Booking List"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 12H5"></path>
+                <path d="M12 19l-7-7 7-7"></path>
+              </svg>
+            </button>
+            <h1>Booking Details</h1>
+          </div>
+        </div>
+        <div className="page-content">
+          <div className="error-message">
+            {error}
+            <div className="error-actions">
+              <button onClick={onNavigateBack} className="btn btn-primary">
+                Go Back
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!booking) {
+    return (
+      <div className="create-booking-page">
+        <div className="page-header">
+          <div className="header-content">
+            <button 
+              className="back-button"
+              onClick={onNavigateBack}
+              title="Back to Booking List"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 12H5"></path>
+                <path d="M12 19l-7-7 7-7"></path>
+              </svg>
+            </button>
+            <h1>Booking Details</h1>
+          </div>
+        </div>
+        <div className="page-content">
+          <div className="no-data">Booking not found</div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="booking-detail-container">
-      {/* Header */}
-      <div className="detail-header">
-        <button className="btn-back" onClick={onNavigateBack}>
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="19" y1="12" x2="5" y2="12"></line>
-            <polyline points="12 19 5 12 12 5"></polyline>
-          </svg>
-          Back to Bookings
-        </button>
-        <h1>Booking Details</h1>
-      </div>
-
+    <div className="create-booking-page">
+      <style>{`
+        .detail-actions-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+          gap: 1rem;
+          padding: 1rem 0;
+        }
+        .action-card {
+          display: flex;
+          align-items: center;
+          padding: 1.25rem;
+          border: 2px solid #e5e7eb;
+          border-radius: 0.75rem;
+          background: white;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          text-align: left;
+        }
+        .action-card:hover:not(:disabled) {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        .action-card:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        .action-card-icon {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 48px;
+          height: 48px;
+          border-radius: 0.5rem;
+          margin-right: 1rem;
+          flex-shrink: 0;
+        }
+        .action-card-approve {
+          border-color: #d1fae5;
+        }
+        .action-card-approve .action-card-icon {
+          background: #d1fae5;
+          color: #059669;
+        }
+        .action-card-reject {
+          border-color: #fef3c7;
+        }
+        .action-card-reject .action-card-icon {
+          background: #fef3c7;
+          color: #d97706;
+        }
+        .action-card-update {
+          border-color: #dbeafe;
+        }
+        .action-card-update .action-card-icon {
+          background: #dbeafe;
+          color: #2563eb;
+        }
+        .action-card-delete {
+          border-color: #fee2e2;
+        }
+        .action-card-delete .action-card-icon {
+          background: #fee2e2;
+          color: #dc2626;
+        }
+        .action-card-content {
+          flex: 1;
+        }
+        .action-card-title {
+          display: block;
+          font-size: 1rem;
+          font-weight: 600;
+          color: #111827;
+          margin-bottom: 0.25rem;
+        }
+        .action-card-desc {
+          display: block;
+          font-size: 0.875rem;
+          color: #6b7280;
+        }
+      `}</style>
       {/* Toast Notification */}
       {toast && (
         <div className={`toast toast-${toast.type}`}>
@@ -207,152 +340,164 @@ const BookingDetail = ({ bookingId, onNavigateBack, userRole = 'Student' }) => {
         </div>
       )}
 
-      {/* Action Buttons */}
-      {isAdmin && (
-        <div className="detail-actions">
-          <button
-            className="btn-primary"
-            onClick={() => setShowStatusForm(true)}
-            disabled={actionLoading}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              marginBottom: '12px'
-            }}
+      <div className="page-header">
+        <div className="header-content">
+          <button 
+            className="back-button"
+            onClick={onNavigateBack}
+            title="Back to Booking List"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 12H5"></path>
+              <path d="M12 19l-7-7 7-7"></path>
             </svg>
-            Update Status
           </button>
-
-          {canApproveBooking(booking.status) && (
-            <button
-              className="btn-approve"
-              onClick={() => setShowApproveModal(true)}
-              disabled={actionLoading}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12"></polyline>
-              </svg>
-              Approve Booking
-            </button>
-          )}
-
-          {canRejectBooking(booking.status) && (
-            <button
-              className="btn-reject"
-              onClick={() => setShowRejectModal(true)}
-              disabled={actionLoading}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-              Reject Booking
-            </button>
-          )}
-
-          {canDeleteBooking(booking.status) && (
-            <button
-              className="btn-delete"
-              onClick={() => setShowDeleteModal(true)}
-              disabled={actionLoading}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="3 6 5 6 21 6"></polyline>
-                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-              </svg>
-              Delete Booking
-            </button>
-          )}
+          <h1>Booking Details</h1>
         </div>
-      )}
+      </div>
 
-      {/* Booking Information */}
-      <div className="detail-content">
-        {/* Status Card */}
-        <div className="detail-card">
-          <div className="detail-card-header">
-            <h3>Status</h3>
-          </div>
-          <div className="detail-card-body">
-            <span className={getStatusBadgeClass(booking.status)}>
-              {getBookingStatusLabel(booking.status)}
-            </span>
-          </div>
-        </div>
-
-        {/* Basic Information */}
-        <div className="detail-card">
-          <div className="detail-card-header">
-            <h3>Basic Information</h3>
-          </div>
-          <div className="detail-card-body">
-            <div className="detail-row">
-              <span className="detail-label">Booking ID:</span>
-              <span className="detail-value">{booking.id}</span>
-            </div>
-            <div className="detail-row">
-              <span className="detail-label">User:</span>
-              <span className="detail-value">{booking.userName}</span>
-            </div>
-            <div className="detail-row">
-              <span className="detail-label">Room:</span>
-              <span className="detail-value">{booking.roomName}</span>
-            </div>
-            <div className="detail-row">
-              <span className="detail-label">Purpose:</span>
-              <span className="detail-value">{booking.purpose || 'N/A'}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Time Information */}
-        <div className="detail-card">
-          <div className="detail-card-header">
-            <h3>Time Information</h3>
-          </div>
-          <div className="detail-card-body">
-            <div className="detail-row">
-              <span className="detail-label">Start Time:</span>
-              <span className="detail-value">{formatBookingDate(booking.startTime)}</span>
-            </div>
-            <div className="detail-row">
-              <span className="detail-label">End Time:</span>
-              <span className="detail-value">{formatBookingDate(booking.endTime)}</span>
-            </div>
-            <div className="detail-row">
-              <span className="detail-label">Duration:</span>
-              <span className="detail-value">{getBookingDuration(booking.startTime, booking.endTime)} hours</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Additional Information */}
-        {(booking.eventId || booking.notes) && (
+      <div className="page-content">
+        <div className="room-detail-content">
           <div className="detail-card">
             <div className="detail-card-header">
-              <h3>Additional Information</h3>
+              <h3>Basic Information</h3>
+              <span className={getStatusBadgeClass(booking.status)}>
+                {getBookingStatusLabel(booking.status)}
+              </span>
             </div>
-            <div className="detail-card-body">
+            <div className="detail-grid">
+              <div className="detail-item">
+                <label>Booking ID:</label>
+                <span className="detail-value">{booking.id}</span>
+              </div>
+              <div className="detail-item">
+                <label>User:</label>
+                <span className="detail-value">{booking.userName || 'N/A'}</span>
+              </div>
+              <div className="detail-item">
+                <label>Room:</label>
+                <span className="detail-value">{booking.roomName || 'N/A'}</span>
+              </div>
+              <div className="detail-item">
+                <label>Purpose:</label>
+                <span className="detail-value">{booking.purpose || 'N/A'}</span>
+              </div>
+              <div className="detail-item">
+                <label>Start Time:</label>
+                <span className="detail-value">{formatBookingDate(booking.startTime)}</span>
+              </div>
+              <div className="detail-item">
+                <label>End Time:</label>
+                <span className="detail-value">{formatBookingDate(booking.endTime)}</span>
+              </div>
+              <div className="detail-item">
+                <label>Duration:</label>
+                <span className="detail-value">{getBookingDuration(booking.startTime, booking.endTime)} hours</span>
+              </div>
+              <div className="detail-item">
+                <label>Created At:</label>
+                <span className="detail-value">{formatDate(booking.createdAt)}</span>
+              </div>
               {booking.eventId && (
-                <div className="detail-row">
-                  <span className="detail-label">Event ID:</span>
+                <div className="detail-item">
+                  <label>Event ID:</label>
                   <span className="detail-value">{booking.eventId}</span>
                 </div>
               )}
               {booking.notes && (
-                <div className="detail-row">
-                  <span className="detail-label">Notes:</span>
+                <div className="detail-item full-width">
+                  <label>Notes:</label>
                   <span className="detail-value">{booking.notes}</span>
                 </div>
               )}
             </div>
           </div>
-        )}
+
+          {/* Action Buttons for Admin */}
+          {isAdmin && (
+            <div className="detail-card">
+              <div className="detail-card-header">
+                <h3>Actions</h3>
+              </div>
+              <div className="detail-card-body">
+                <div className="detail-actions-grid">
+                  <button
+                    className="action-card action-card-update"
+                    onClick={() => setShowStatusForm(true)}
+                    disabled={actionLoading}
+                  >
+                    <div className="action-card-icon">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M9 12l2 2 4-4"/>
+                        <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/>
+                      </svg>
+                    </div>
+                    <div className="action-card-content">
+                      <span className="action-card-title">Update Status</span>
+                      <span className="action-card-desc">Change booking status</span>
+                    </div>
+                  </button>
+
+                  {canApproveBooking(booking.status) && (
+                  <button
+                    className="action-card action-card-approve"
+                    onClick={() => setShowApproveModal(true)}
+                    disabled={actionLoading}
+                  >
+                    <div className="action-card-icon">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    </div>
+                    <div className="action-card-content">
+                      <span className="action-card-title">Approve Booking</span>
+                      <span className="action-card-desc">Accept this booking request</span>
+                    </div>
+                  </button>
+                  )}
+
+                  {canRejectBooking(booking.status) && (
+                    <button
+                      className="action-card action-card-reject"
+                      onClick={() => setShowRejectModal(true)}
+                      disabled={actionLoading}
+                    >
+                      <div className="action-card-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="18" y1="6" x2="6" y2="18"></line>
+                          <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                      </div>
+                      <div className="action-card-content">
+                        <span className="action-card-title">Reject Booking</span>
+                        <span className="action-card-desc">Decline this booking request</span>
+                      </div>
+                    </button>
+                  )}
+
+                  {canDeleteBooking(booking.status) && (
+                    <button
+                      className="action-card action-card-delete"
+                      onClick={() => setShowDeleteModal(true)}
+                      disabled={actionLoading}
+                    >
+                      <div className="action-card-icon">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="3 6 5 6 21 6"></polyline>
+                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                      </div>
+                      <div className="action-card-content">
+                        <span className="action-card-title">Delete Booking</span>
+                        <span className="action-card-desc">Remove this booking permanently</span>
+                      </div>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Approve Modal */}
@@ -379,7 +524,7 @@ const BookingDetail = ({ bookingId, onNavigateBack, userRole = 'Student' }) => {
               <button className="btn-secondary" onClick={() => setShowApproveModal(false)} disabled={actionLoading}>
                 Cancel
               </button>
-              <button className="btn-approve" onClick={handleApprove} disabled={actionLoading}>
+              <button className="btn-success" onClick={handleApprove} disabled={actionLoading}>
                 {actionLoading ? 'Approving...' : 'Approve'}
               </button>
             </div>
@@ -412,7 +557,7 @@ const BookingDetail = ({ bookingId, onNavigateBack, userRole = 'Student' }) => {
               <button className="btn-secondary" onClick={() => setShowRejectModal(false)} disabled={actionLoading}>
                 Cancel
               </button>
-              <button className="btn-reject" onClick={handleReject} disabled={actionLoading || !rejectNotes}>
+              <button className="btn-warning" onClick={handleReject} disabled={actionLoading || !rejectNotes}>
                 {actionLoading ? 'Rejecting...' : 'Reject'}
               </button>
             </div>
@@ -436,7 +581,7 @@ const BookingDetail = ({ bookingId, onNavigateBack, userRole = 'Student' }) => {
               <button className="btn-secondary" onClick={() => setShowDeleteModal(false)} disabled={actionLoading}>
                 Cancel
               </button>
-              <button className="btn-delete" onClick={handleDelete} disabled={actionLoading}>
+              <button className="btn-danger" onClick={handleDelete} disabled={actionLoading}>
                 {actionLoading ? 'Deleting...' : 'Delete'}
               </button>
             </div>
@@ -458,4 +603,3 @@ const BookingDetail = ({ bookingId, onNavigateBack, userRole = 'Student' }) => {
 };
 
 export default BookingDetail;
-
