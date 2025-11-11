@@ -459,17 +459,7 @@ function Home({ user: userProp }) {
     }
   };
 
-  // Status helpers
-  const getStatusLabel = (status) => {
-    const statusMap = {
-      0: 'Pending',
-      1: 'Approved',
-      2: 'Rejected',
-      3: 'Cancelled',
-      4: 'Completed'
-    };
-    return statusMap[status] || 'Pending';
-  };
+  // Status helpers (removed unused getStatusLabel)
 
   // Removed unused getStatusBadgeClass
 
