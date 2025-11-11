@@ -2,8 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { EventList, EventDetail } from '../features/event-management';
 import { EditEvent } from '../features/event-management/admin';
 import { LabList } from '../features/lab-management';
-import { BookingApprovalManagement } from '../features/booking-management/lecturer';
-import { EquipmentAvailability } from '../features/equipment-management/lecture';
+import { EquipmentList } from '../features/equipment-management';
 import LecturerReportsManagement from '../features/reports-management/lecturer/LecturerReportsManagement';
 import LecturerNotifications from '../features/notification-management/lecturer/LecturerNotifications';
 import { authApi, bookingApi, eventApi, labsApi, roomsApi, equipmentApi, reportsApi, notificationApi } from '../api';
@@ -223,16 +222,7 @@ const LecturerDashboard = ({ user: userProp }) => {
         </svg>
       )
     },
-    { 
-      id: 'approvals', 
-      label: 'Approvals', 
-      icon: (
-        <svg xmlns="http://www.w3.org/2000/svg" width="1.125rem" height="1.125rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
-          <rect width="20" height="14" x="2" y="6" rx="2"></rect>
-        </svg>
-      )
-    },
+    
     { 
       id: 'events', 
       label: 'Events', 
@@ -302,12 +292,7 @@ const LecturerDashboard = ({ user: userProp }) => {
     switch (activeTab) {
       case 'dashboard':
         return renderDashboard();
-      case 'approvals':
-        return (
-          <div className="lecturer-content">
-            <BookingApprovalManagement />
-          </div>
-        );
+      
       case 'events':
         if (editingEventId) {
           return (
@@ -335,8 +320,8 @@ const LecturerDashboard = ({ user: userProp }) => {
         }
         return (
           <div className="lecturer-content">
-            <EventList 
-              userRole="Lecturer" 
+            <EventList
+              userRole="Lecturer"
               onViewEvent={(eventId) => setViewingEventId(eventId)}
               onEditEvent={(eventId) => setEditingEventId(eventId)}
               initialToast={eventToast}
@@ -353,7 +338,7 @@ const LecturerDashboard = ({ user: userProp }) => {
       case 'equipment':
         return (
           <div className="lecturer-content">
-            <EquipmentAvailability />
+            <EquipmentList userRole="Lecturer" />
           </div>
         );
       case 'reports':

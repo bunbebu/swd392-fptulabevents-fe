@@ -86,24 +86,62 @@ const EquipmentAvailability = ({ roomId, onSelectEquipment }) => {
 
   // Availability indicator
   const AvailabilityIndicator = ({ equipment }) => {
+    const getIndicatorStyle = (type) => {
+      const baseStyle = {
+        padding: '4px 8px',
+        borderRadius: '4px',
+        fontSize: '12px',
+        fontWeight: '500',
+        display: 'inline-block'
+      };
+
+      const styles = {
+        unavailable: { ...baseStyle, background: '#fee2e2', color: '#991b1b' },
+        low: { ...baseStyle, background: '#fef3c7', color: '#92400e' },
+        available: { ...baseStyle, background: '#d1fae5', color: '#065f46' }
+      };
+
+      return styles[type] || baseStyle;
+    };
+
     if (equipment.status !== 'Available') {
-      return <span className="availability-indicator unavailable">Unavailable</span>;
+      return <span style={getIndicatorStyle('unavailable')}>Unavailable</span>;
     }
     if (equipment.quantityAvailable === 0) {
-      return <span className="availability-indicator unavailable">Out of Stock</span>;
+      return <span style={getIndicatorStyle('unavailable')}>Out of Stock</span>;
     }
     if (equipment.quantityAvailable < equipment.quantity * 0.3) {
-      return <span className="availability-indicator low">Low Stock</span>;
+      return <span style={getIndicatorStyle('low')}>Low Stock</span>;
     }
-    return <span className="availability-indicator available">In Stock</span>;
+    return <span style={getIndicatorStyle('available')}>In Stock</span>;
   };
 
   if (loading) {
     return (
       <div className="admin-content">
-        <div className="loading-container">
-          <div className="loading-spinner"></div>
-          <p>Loading equipment information...</p>
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '60px 20px',
+          minHeight: '400px'
+        }}>
+          <div className="loading-spinner" style={{
+            width: '40px',
+            height: '40px',
+            border: '4px solid #f3f4f6',
+            borderTop: '4px solid #4F46E5',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite'
+          }}></div>
+          <p style={{
+            marginTop: '16px',
+            color: '#6b7280',
+            fontSize: '14px'
+          }}>
+            Loading equipment information...
+          </p>
         </div>
       </div>
     );
@@ -112,10 +150,26 @@ const EquipmentAvailability = ({ roomId, onSelectEquipment }) => {
   if (error) {
     return (
       <div className="admin-content">
-        <div className="error-container">
-          <h3>Error</h3>
-          <p>{error}</p>
+        <div style={{
+          background: '#fee2e2',
+          border: '1px solid #fecaca',
+          borderRadius: '8px',
+          padding: '24px',
+          textAlign: 'center',
+          margin: '20px 0'
+        }}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" style={{ margin: '0 auto 16px' }}>
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          <h3 style={{ color: '#991b1b', marginBottom: '8px' }}>Error</h3>
+          <p style={{ color: '#7f1d1d', marginBottom: '16px' }}>{error}</p>
           <button className="btn-primary" onClick={loadEquipments}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '4px' }}>
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+            </svg>
             Try Again
           </button>
         </div>
@@ -125,11 +179,11 @@ const EquipmentAvailability = ({ roomId, onSelectEquipment }) => {
 
   return (
     <div className="admin-content">
-      {/* Header */}
+      {/* Header (align with admin list pages) */}
       <div className="content-header">
         <div>
           <h2>Equipment Status</h2>
-          <p>View equipment status for booking approval</p>
+          <p>View equipment availability for booking approval</p>
         </div>
       </div>
 
@@ -196,21 +250,54 @@ const EquipmentAvailability = ({ roomId, onSelectEquipment }) => {
       </div>
 
       {/* View Mode Tabs */}
-      <div className="tabs-container" style={{ marginBottom: '20px' }}>
+      <div style={{
+        display: 'flex',
+        gap: '8px',
+        marginBottom: '20px',
+        borderBottom: '1px solid #e5e7eb',
+        paddingBottom: '0'
+      }}>
         <button
-          className={`tab-button ${viewMode === 'all' ? 'active' : ''}`}
+          style={{
+            padding: '10px 16px',
+            border: 'none',
+            borderBottom: viewMode === 'all' ? '2px solid #4F46E5' : '2px solid transparent',
+            background: 'transparent',
+            color: viewMode === 'all' ? '#4F46E5' : '#6b7280',
+            fontWeight: viewMode === 'all' ? '600' : '400',
+            cursor: 'pointer',
+            transition: 'all 0.2s'
+          }}
           onClick={() => setViewMode('all')}
         >
           All Equipment
         </button>
         <button
-          className={`tab-button ${viewMode === 'available' ? 'active' : ''}`}
+          style={{
+            padding: '10px 16px',
+            border: 'none',
+            borderBottom: viewMode === 'available' ? '2px solid #4F46E5' : '2px solid transparent',
+            background: 'transparent',
+            color: viewMode === 'available' ? '#4F46E5' : '#6b7280',
+            fontWeight: viewMode === 'available' ? '600' : '400',
+            cursor: 'pointer',
+            transition: 'all 0.2s'
+          }}
           onClick={() => setViewMode('available')}
         >
           Available Only
         </button>
         <button
-          className={`tab-button ${viewMode === 'by-room' ? 'active' : ''}`}
+          style={{
+            padding: '10px 16px',
+            border: 'none',
+            borderBottom: viewMode === 'by-room' ? '2px solid #4F46E5' : '2px solid transparent',
+            background: 'transparent',
+            color: viewMode === 'by-room' ? '#4F46E5' : '#6b7280',
+            fontWeight: viewMode === 'by-room' ? '600' : '400',
+            cursor: 'pointer',
+            transition: 'all 0.2s'
+          }}
           onClick={() => setViewMode('by-room')}
         >
           By Room
@@ -219,8 +306,21 @@ const EquipmentAvailability = ({ roomId, onSelectEquipment }) => {
 
       {/* Room ID Input (shown when by-room mode is selected) */}
       {viewMode === 'by-room' && (
-        <div className="form-group" style={{ marginBottom: '20px' }}>
-          <label htmlFor="roomId">Room ID:</label>
+        <div style={{
+          marginBottom: '20px',
+          padding: '16px',
+          background: '#f9fafb',
+          borderRadius: '8px',
+          border: '1px solid #e5e7eb'
+        }}>
+          <label htmlFor="roomId" style={{
+            display: 'block',
+            marginBottom: '8px',
+            fontWeight: '500',
+            color: '#374151'
+          }}>
+            Room ID:
+          </label>
           <div style={{ display: 'flex', gap: '10px' }}>
             <input
               type="text"
@@ -228,9 +328,19 @@ const EquipmentAvailability = ({ roomId, onSelectEquipment }) => {
               value={selectedRoomId}
               onChange={(e) => setSelectedRoomId(e.target.value)}
               placeholder="Enter room ID..."
-              style={{ flex: 1 }}
+              style={{
+                flex: 1,
+                padding: '8px 12px',
+                border: '1px solid #d1d5db',
+                borderRadius: '6px',
+                fontSize: '14px'
+              }}
             />
             <button className="btn-primary" onClick={loadEquipments}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: '4px' }}>
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="m21 21-4.35-4.35"></path>
+              </svg>
               Search
             </button>
           </div>
@@ -292,21 +402,39 @@ const EquipmentAvailability = ({ roomId, onSelectEquipment }) => {
               {filteredEquipments.map((equipment) => (
                 <tr key={equipment.id}>
                   <td>
-                    <span className="equipment-code">{equipment.code}</span>
+                    <span style={{
+                      padding: '4px 8px',
+                      background: '#f3f4f6',
+                      borderRadius: '4px',
+                      fontSize: '13px',
+                      fontFamily: 'monospace',
+                      color: '#374151'
+                    }}>
+                      {equipment.code}
+                    </span>
                   </td>
                   <td>
                     <div>
-                      <strong>{equipment.name}</strong>
+                      <strong style={{ color: '#111827' }}>{equipment.name}</strong>
                       {equipment.description && (
-                        <div className="text-muted small">{equipment.description}</div>
+                        <div style={{
+                          fontSize: '12px',
+                          color: '#6b7280',
+                          marginTop: '2px'
+                        }}>
+                          {equipment.description}
+                        </div>
                       )}
                     </div>
                   </td>
                   <td>{equipment.category}</td>
-                  <td className="text-center">{equipment.quantity}</td>
-                  <td className="text-center">
-                    <span className={equipment.quantityAvailable > 0 ? 'text-success' : 'text-danger'}>
-                      <strong>{equipment.quantityAvailable}</strong>
+                  <td style={{ textAlign: 'center' }}>{equipment.quantity}</td>
+                  <td style={{ textAlign: 'center' }}>
+                    <span style={{
+                      color: equipment.quantityAvailable > 0 ? '#059669' : '#dc2626',
+                      fontWeight: '600'
+                    }}>
+                      {equipment.quantityAvailable}
                     </span>
                   </td>
                   <td>
@@ -318,7 +446,13 @@ const EquipmentAvailability = ({ roomId, onSelectEquipment }) => {
                   {onSelectEquipment && (
                     <td>
                       <button
-                        className="btn-sm btn-primary"
+                        className="btn-primary"
+                        style={{
+                          padding: '6px 12px',
+                          fontSize: '13px',
+                          opacity: (equipment.status !== 'Available' || equipment.quantityAvailable === 0) ? 0.5 : 1,
+                          cursor: (equipment.status !== 'Available' || equipment.quantityAvailable === 0) ? 'not-allowed' : 'pointer'
+                        }}
                         onClick={() => onSelectEquipment(equipment)}
                         disabled={equipment.status !== 'Available' || equipment.quantityAvailable === 0}
                       >
@@ -334,8 +468,16 @@ const EquipmentAvailability = ({ roomId, onSelectEquipment }) => {
       </div>
 
       {/* Results count */}
-      <div className="table-footer">
-        <p className="text-muted">
+      <div className="table-footer" style={{
+        marginTop: '16px',
+        padding: '12px 0',
+        borderTop: '1px solid #e5e7eb'
+      }}>
+        <p style={{
+          margin: 0,
+          fontSize: '14px',
+          color: '#6b7280'
+        }}>
           Showing {filteredEquipments.length} / {equipments.length} equipment
         </p>
       </div>

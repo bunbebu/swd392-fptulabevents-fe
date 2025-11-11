@@ -1,6 +1,29 @@
-import React, { useState, useEffect } from 'react';
-import { eventApi } from '../../../api';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { eventApi, labsApi, roomsApi } from '../../../api';
 import { EVENT_STATUS_OPTIONS } from '../../../constants/eventConstants';
+import {
+  uploadImage,
+  validateImageFile,
+  isStorageAvailable,
+  createPreviewUrl,
+  revokePreviewUrl,
+  formatFileSize
+} from '../../../utils/imageUpload';
+import {
+  BOOKING_MODES,
+  DEFAULT_BOOKING_MODE,
+  ensureArray,
+  toDateTimeLocal,
+  parseDateTimeLocal,
+  startOfDay,
+  endOfDay,
+  normalizeLab,
+  normalizeRoom,
+  normalizeSlot,
+  formatDateDisplay,
+  formatTimeDisplay,
+  groupSlotsByRoom
+} from './eventBookingHelpers';
 
 /**
  * Edit Event Page Component - Admin Only
@@ -28,12 +51,51 @@ const EditEvent = ({ event, eventId, onNavigateBack, onSuccess }) => {
     endDate: '',
     status: 0,
     visibility: true,
-    recurrenceRule: ''
+    recurrenceRule: '',
+    capacity: 1,
+    imageUrl: ''
   });
 
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [fetchingEvent, setFetchingEvent] = useState(false);
+
+  // Image upload states
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
+  const [useUrlInput, setUseUrlInput] = useState(!isStorageAvailable());
+  const fileInputRef = useRef(null);
+
+  // Booking states
+  const [bookingMode, setBookingMode] = useState(DEFAULT_BOOKING_MODE);
+  const [labs, setLabs] = useState([]);
+  const [labsLoading, setLabsLoading] = useState(false);
+  const [labsError, setLabsError] = useState('');
+  const [selectedLabId, setSelectedLabId] = useState('');
+
+  const [rooms, setRooms] = useState([]);
+  const [roomsLoading, setRoomsLoading] = useState(false);
+  const [roomsError, setRoomsError] = useState('');
+  const [selectedRoomId, setSelectedRoomId] = useState('');
+
+  const [slotDate, setSlotDate] = useState('');
+  const [slots, setSlots] = useState([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [slotsError, setSlotsError] = useState('');
+  const [selectedSlotIds, setSelectedSlotIds] = useState(() => new Set());
+
+  const groupedSlots = useMemo(() => groupSlotsByRoom(slots), [slots]);
+  const currentEventId = useMemo(() => eventId || eventData?.id || eventData?.Id || null, [eventId, eventData]);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) {
+        revokePreviewUrl(previewUrl);
+      }
+    };
+  }, [previewUrl]);
 
   // Fetch event data if eventId is provided
   useEffect(() => {
@@ -59,31 +121,53 @@ const EditEvent = ({ event, eventId, onNavigateBack, onSuccess }) => {
 
   useEffect(() => {
     if (eventData) {
-      // Convert dates to datetime-local format
-      const formatDateForInput = (dateString) => {
-        if (!dateString) return '';
-        const date = new Date(dateString);
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        const hours = String(date.getHours()).padStart(2, '0');
-        const minutes = String(date.getMinutes()).padStart(2, '0');
-        return `${year}-${month}-${day}T${hours}:${minutes}`;
-      };
+      const normalizedStatus = typeof eventData.status === 'string'
+        ? EVENT_STATUS_OPTIONS.find(opt => opt.label === eventData.status)?.value || 0
+        : eventData.status || 0;
 
       setFormData({
         title: eventData.title || '',
         description: eventData.description || '',
         location: eventData.location || '',
-        startDate: formatDateForInput(eventData.startDate),
-        endDate: formatDateForInput(eventData.endDate),
-        status: typeof eventData.status === 'string' 
-          ? EVENT_STATUS_OPTIONS.find(opt => opt.label === eventData.status)?.value || 0
-          : eventData.status || 0,
+        startDate: eventData.startDate ? toDateTimeLocal(new Date(eventData.startDate)) : '',
+        endDate: eventData.endDate ? toDateTimeLocal(new Date(eventData.endDate)) : '',
+        status: normalizedStatus,
         visibility: eventData.visibility !== undefined ? eventData.visibility : true,
-        recurrenceRule: eventData.recurrenceRule || ''
+        recurrenceRule: eventData.recurrenceRule || '',
+        capacity: eventData.capacity || 1,
+        imageUrl: eventData.imageUrl || ''
       });
+
+      if (eventData.imageUrl) setUseUrlInput(true);
+
+      const initialSlots = ensureArray(eventData.roomSlots || eventData.RoomSlots);
+      const initialLabId = eventData.labId || eventData.LabId || '';
+      const initialRoomId = eventData.roomId || eventData.RoomId || (initialSlots[0]?.roomId ?? initialSlots[0]?.RoomId ?? '');
+      const initialSlotDateRaw = initialSlots[0]?.date || initialSlots[0]?.Date;
+
+      setBookingMode(initialSlots.length > 0 || initialRoomId ? BOOKING_MODES.ROOM : BOOKING_MODES.LAB);
+      setSelectedLabId(initialLabId || '');
+      setSelectedRoomId(initialRoomId || '');
+      setSelectedSlotIds(new Set(initialSlots.map((slot) => slot.id ?? slot.Id).filter(Boolean)));
+
+      if (initialSlotDateRaw) {
+        const dateValue = new Date(initialSlotDateRaw);
+        if (!Number.isNaN(dateValue.getTime())) {
+          setSlotDate(toDateTimeLocal(dateValue).split('T')[0]);
+        }
+      }
     }
+  }, [eventData]);
+
+  const initialSlotLookup = useMemo(() => {
+    const map = new Map();
+    ensureArray(eventData?.roomSlots || eventData?.RoomSlots).forEach((slot) => {
+      const normalized = normalizeSlot(slot);
+      if (normalized.id) {
+        map.set(normalized.id, normalized);
+      }
+    });
+    return map;
   }, [eventData]);
 
   const handleChange = (e) => {
@@ -96,7 +180,345 @@ const EditEvent = ({ event, eventId, onNavigateBack, onSuccess }) => {
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
+
+    if (name === 'startDate' && value && !slotDate) {
+      const datePart = value.split('T')[0];
+      if (datePart) setSlotDate(datePart);
+    }
   };
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const validation = validateImageFile(file);
+    if (!validation.valid) {
+      setErrors(prev => ({ ...prev, imageUrl: validation.error }));
+      return;
+    }
+
+    setErrors(prev => ({ ...prev, imageUrl: '' }));
+
+    if (previewUrl) {
+      revokePreviewUrl(previewUrl);
+    }
+
+    setSelectedFile(file);
+    setPreviewUrl(createPreviewUrl(file));
+    setFormData(prev => ({ ...prev, imageUrl: '' }));
+  };
+
+  const handleRemoveImage = () => {
+    if (previewUrl) {
+      revokePreviewUrl(previewUrl);
+      setPreviewUrl('');
+    }
+    setSelectedFile(null);
+    setFormData(prev => ({ ...prev, imageUrl: '' }));
+    setUploadProgress(0);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleToggleInputMode = () => {
+    handleRemoveImage();
+    setUseUrlInput(!useUrlInput);
+  };
+
+  const handleBookingModeChange = (mode) => {
+    if (mode === bookingMode) return;
+    setBookingMode(mode);
+    setErrors((prev) => ({ ...prev, roomSlotIds: '', roomId: '' }));
+    setSelectedSlotIds(new Set());
+    if (mode === BOOKING_MODES.LAB) {
+      setSelectedRoomId('');
+      setSlots([]);
+      setSlotDate('');
+    }
+  };
+
+  const handleLabChange = (labId) => {
+    setSelectedLabId(labId);
+    setErrors((prev) => ({ ...prev, labId: '' }));
+    setSelectedRoomId('');
+    setSelectedSlotIds(new Set());
+    setSlots([]);
+    setSlotDate('');
+  };
+
+  const handleRoomChange = (roomId) => {
+    setSelectedRoomId(roomId);
+    setErrors((prev) => ({ ...prev, roomId: '' }));
+    setSelectedSlotIds(new Set());
+    setSlots([]);
+  };
+
+  const handleSlotDateChange = (value) => {
+    setSlotDate(value);
+    setSelectedSlotIds(new Set());
+    setSlots([]);
+  };
+
+  const slotLookup = useMemo(() => {
+    const map = new Map(initialSlotLookup);
+    slots.forEach((slot) => {
+      map.set(slot.id, slot);
+    });
+    return map;
+  }, [initialSlotLookup, slots]);
+
+  const selectedRoomsCount = useMemo(() => {
+    const roomsSet = new Set();
+    selectedSlotIds.forEach((id) => {
+      const slot = slotLookup.get(id);
+      if (slot?.roomId) {
+        roomsSet.add(slot.roomId);
+      }
+    });
+    return roomsSet.size;
+  }, [selectedSlotIds, slotLookup]);
+
+  const isSlotBooked = (slot) => Boolean(slot?.eventId && slot.eventId !== currentEventId);
+
+  const canSelectSlot = (slot) => !isSlotBooked(slot);
+
+  const handleToggleSlot = (slotId) => {
+    const slot = slotLookup.get(slotId);
+    if (!slot || !canSelectSlot(slot)) return;
+
+    const next = new Set(selectedSlotIds);
+    if (next.has(slotId)) {
+      next.delete(slotId);
+    } else {
+      next.add(slotId);
+    }
+
+    setSelectedSlotIds(next);
+
+    if (next.size > 0) {
+      const selectedSlots = Array.from(next)
+        .map((id) => slotLookup.get(id))
+        .filter(Boolean)
+        .sort((a, b) => {
+          const aTime = a.startDateTime?.getTime() ?? 0;
+          const bTime = b.startDateTime?.getTime() ?? 0;
+          return aTime - bTime;
+        });
+
+      const first = selectedSlots[0];
+      const last = selectedSlots[selectedSlots.length - 1];
+
+      if (first?.startDateTime && last?.endDateTime) {
+        setFormData((prev) => ({
+          ...prev,
+          startDate: toDateTimeLocal(first.startDateTime),
+          endDate: toDateTimeLocal(last.endDateTime)
+        }));
+      }
+    }
+
+    if (errors.roomSlotIds) {
+      setErrors((prev) => ({ ...prev, roomSlotIds: '' }));
+    }
+  };
+
+  // Load labs once
+  useEffect(() => {
+    let isMounted = true;
+    const loadLabs = async () => {
+      setLabsLoading(true);
+      setLabsError('');
+      try {
+        const response = await labsApi.getLabs();
+        if (!isMounted) return;
+        const normalized = ensureArray(response).map(normalizeLab);
+        setLabs(normalized);
+        if (!selectedLabId && normalized.length === 1) {
+          setSelectedLabId(normalized[0].id);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setLabsError(error?.message || 'Failed to load labs');
+        }
+      } finally {
+        if (isMounted) setLabsLoading(false);
+      }
+    };
+
+    loadLabs();
+    return () => { isMounted = false; };
+  }, [selectedLabId]);
+
+  // Sync slot date with start date if empty
+  useEffect(() => {
+    if (!formData.startDate) return;
+    const datePart = formData.startDate.split('T')[0];
+    if (datePart && !slotDate) {
+      setSlotDate(datePart);
+    }
+  }, [formData.startDate, slotDate]);
+
+  // Fetch rooms when lab changes
+  useEffect(() => {
+    if (!selectedLabId) {
+      setRooms([]);
+      setSelectedRoomId('');
+      return;
+    }
+
+    let isMounted = true;
+    const loadRooms = async () => {
+      setRoomsLoading(true);
+      setRoomsError('');
+      try {
+        const response = await roomsApi.getRooms({ labId: selectedLabId });
+        if (!isMounted) return;
+        const normalized = ensureArray(response).map(normalizeRoom);
+        setRooms(normalized);
+        if (bookingMode === BOOKING_MODES.ROOM && normalized.length === 1 && !selectedRoomId) {
+          setSelectedRoomId(normalized[0].id);
+        }
+        if (bookingMode === BOOKING_MODES.ROOM && selectedRoomId) {
+          const exists = normalized.find((room) => room.id === selectedRoomId);
+          if (!exists) setSelectedRoomId('');
+        }
+      } catch (error) {
+        if (isMounted) {
+          setRoomsError(error?.message || 'Failed to load rooms');
+          setRooms([]);
+        }
+      } finally {
+        if (isMounted) setRoomsLoading(false);
+      }
+    };
+
+    loadRooms();
+    return () => { isMounted = false; };
+  }, [selectedLabId, bookingMode, selectedRoomId]);
+
+  // Fetch room slots when room/date changes
+  useEffect(() => {
+    if (bookingMode !== BOOKING_MODES.ROOM) {
+      setSlots([]);
+      setSelectedSlotIds(new Set());
+      return;
+    }
+
+    if (!selectedRoomId || !slotDate) {
+      setSlots([]);
+      setSelectedSlotIds(new Set());
+      return;
+    }
+
+    let isMounted = true;
+    const loadSlots = async () => {
+      setSlotsLoading(true);
+      setSlotsError('');
+      try {
+        const startDateObj = startOfDay(slotDate);
+        const endDateObj = endOfDay(slotDate);
+        const response = await roomsApi.getRoomSlotsByDateRange(selectedRoomId, startDateObj, endDateObj);
+        if (!isMounted) return;
+        const currentRoom = rooms.find((room) => room.id === selectedRoomId);
+        const normalized = ensureArray(response)
+          .map((item) => {
+            const slot = normalizeSlot(item);
+            return {
+              ...slot,
+              roomId: slot.roomId || selectedRoomId,
+              roomName: slot.roomName || currentRoom?.name || ''
+            };
+          });
+        setSlots(normalized);
+        setSelectedSlotIds((prev) => {
+          const next = new Set();
+          normalized.forEach((slot) => {
+            if ((slot.eventId === undefined || slot.eventId === null || slot.eventId === currentEventId) && prev.has(slot.id)) {
+              next.add(slot.id);
+            }
+          });
+          return next;
+        });
+      } catch (error) {
+        if (isMounted) {
+          setSlotsError(error?.message || 'Failed to load room slots');
+          setSlots([]);
+          setSelectedSlotIds(new Set());
+        }
+      } finally {
+        if (isMounted) setSlotsLoading(false);
+      }
+    };
+
+    loadSlots();
+    return () => { isMounted = false; };
+  }, [bookingMode, selectedRoomId, slotDate, currentEventId, rooms]);
+
+  useEffect(() => {
+    if (bookingMode !== BOOKING_MODES.LAB) {
+      return;
+    }
+
+    if (!selectedLabId || !slotDate || rooms.length === 0) {
+      setSlots([]);
+      setSelectedSlotIds(new Set());
+      return;
+    }
+
+    let isMounted = true;
+    const loadLabSlots = async () => {
+      setSlotsLoading(true);
+      setSlotsError('');
+      try {
+        const startDateObj = startOfDay(slotDate);
+        const endDateObj = endOfDay(slotDate);
+        const requests = rooms.map(async (room) => {
+          try {
+            const response = await roomsApi.getRoomSlotsByDateRange(room.id, startDateObj, endDateObj);
+            return ensureArray(response)
+              .map((item) => {
+                const slot = normalizeSlot(item);
+                return {
+                  ...slot,
+                  roomId: slot.roomId || room.id,
+                  roomName: slot.roomName || room.name
+                };
+              });
+          } catch (error) {
+            console.error('Failed to load slots for room', room.id, error);
+            return [];
+          }
+        });
+
+        const results = await Promise.all(requests);
+        if (!isMounted) return;
+        const flattened = results.flat();
+        setSlots(flattened);
+        setSelectedSlotIds((prev) => {
+          const next = new Set();
+          flattened.forEach((slot) => {
+            if ((slot.eventId === undefined || slot.eventId === null || slot.eventId === currentEventId) && prev.has(slot.id)) {
+              next.add(slot.id);
+            }
+          });
+          return next;
+        });
+      } catch (error) {
+        if (isMounted) {
+          setSlotsError(error?.message || 'Failed to load room slots');
+          setSlots([]);
+          setSelectedSlotIds(new Set());
+        }
+      } finally {
+        if (isMounted) setSlotsLoading(false);
+      }
+    };
+
+    loadLabSlots();
+    return () => { isMounted = false; };
+  }, [bookingMode, selectedLabId, slotDate, rooms, currentEventId]);
 
   const validate = () => {
     const newErrors = {};
@@ -122,6 +544,34 @@ const EditEvent = ({ event, eventId, onNavigateBack, onSuccess }) => {
       }
     }
 
+    if (!formData.capacity || formData.capacity < 1) {
+      newErrors.capacity = 'Capacity must be at least 1';
+    }
+
+    if (!selectedLabId) {
+      newErrors.labId = 'Please select a lab';
+    }
+
+    if (bookingMode === BOOKING_MODES.LAB) {
+      if (selectedLabId && !roomsLoading && rooms.length === 0) {
+        newErrors.labId = 'Selected lab has no rooms available';
+      }
+
+      if (!selectedSlotIds.size) {
+        newErrors.roomSlotIds = 'Please select at least one time slot';
+      }
+    }
+
+    if (bookingMode === BOOKING_MODES.ROOM) {
+      if (!selectedRoomId) {
+        newErrors.roomId = 'Please select a room';
+      }
+
+      if (!selectedSlotIds.size) {
+        newErrors.roomSlotIds = 'Please select at least one time slot';
+      }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -133,21 +583,50 @@ const EditEvent = ({ event, eventId, onNavigateBack, onSuccess }) => {
       return;
     }
 
-    const attemptUpdate = async (retryCount = 0) => {
+    const attemptUpdate = async (imageUrlValue, retryCount = 0) => {
       const targetEventId = eventId || eventData?.id;
       if (!targetEventId) {
         throw new Error('Event ID is required');
+      }
+
+      const parsedStart = parseDateTimeLocal(formData.startDate);
+      const parsedEnd = parseDateTimeLocal(formData.endDate);
+
+      let effectiveStart = parsedStart;
+      let effectiveEnd = parsedEnd;
+      let roomSlotIdsPayload = null;
+
+      if (bookingMode === BOOKING_MODES.ROOM || bookingMode === BOOKING_MODES.LAB) {
+        const selectedSlots = Array.from(selectedSlotIds)
+          .map((id) => slotLookup.get(id))
+          .filter(Boolean)
+          .sort((a, b) => {
+            const aTime = a.startDateTime?.getTime() ?? 0;
+            const bTime = b.startDateTime?.getTime() ?? 0;
+            return aTime - bTime;
+          });
+
+        if (selectedSlots.length > 0) {
+          effectiveStart = selectedSlots[0].startDateTime || effectiveStart;
+          effectiveEnd = selectedSlots[selectedSlots.length - 1].endDateTime || effectiveEnd;
+          roomSlotIdsPayload = selectedSlots.map((slot) => slot.id);
+        }
       }
 
       const submitData = {
         title: formData.title.trim(),
         description: formData.description.trim(),
         location: formData.location.trim(),
-        startDate: new Date(formData.startDate).toISOString(),
-        endDate: new Date(formData.endDate).toISOString(),
+        startDate: (effectiveStart || parsedStart || new Date()).toISOString(),
+        endDate: (effectiveEnd || parsedEnd || new Date()).toISOString(),
         status: parseInt(formData.status),
         visibility: formData.visibility,
-        recurrenceRule: formData.recurrenceRule.trim() || null
+        recurrenceRule: formData.recurrenceRule.trim() || null,
+        capacity: parseInt(formData.capacity),
+        imageUrl: imageUrlValue ? imageUrlValue : null,
+        labId: selectedLabId || null,
+        roomId: bookingMode === BOOKING_MODES.ROOM ? (selectedRoomId || null) : null,
+        roomSlotIds: roomSlotIdsPayload && roomSlotIdsPayload.length ? roomSlotIdsPayload : null
       };
 
       console.log(`Submitting event update (attempt ${retryCount + 1}):`, { targetEventId, submitData });
@@ -167,7 +646,7 @@ const EditEvent = ({ event, eventId, onNavigateBack, onSuccess }) => {
           console.log(`Concurrency error detected, retrying... (attempt ${retryCount + 2})`);
           // Wait a bit before retrying
           await new Promise(resolve => setTimeout(resolve, 300));
-          return attemptUpdate(retryCount + 1);
+          return attemptUpdate(imageUrlValue, retryCount + 1);
         }
 
         throw err; // Re-throw if not concurrency error or out of retries
@@ -176,7 +655,26 @@ const EditEvent = ({ event, eventId, onNavigateBack, onSuccess }) => {
 
     try {
       setLoading(true);
-      await attemptUpdate();
+
+      // Upload image to Cloudinary if needed
+      let imageUrlValue = formData.imageUrl.trim();
+      if (selectedFile && !useUrlInput) {
+        try {
+          setIsUploading(true);
+          imageUrlValue = await uploadImage(selectedFile, 'events', (progress) => {
+            setUploadProgress(progress);
+          });
+          setIsUploading(false);
+        } catch (uploadError) {
+          console.error('Failed to upload image:', uploadError);
+          setErrors({ imageUrl: uploadError.message || 'Failed to upload image' });
+          setLoading(false);
+          setIsUploading(false);
+          return;
+        }
+      }
+
+      await attemptUpdate(imageUrlValue);
 
       // Navigate back to event list with success message
       if (onSuccess) {
@@ -206,6 +704,11 @@ const EditEvent = ({ event, eventId, onNavigateBack, onSuccess }) => {
       setErrors({ submit: errorMessage });
     } finally {
       setLoading(false);
+      setIsUploading(false);
+      setUploadProgress(0);
+      if (previewUrl) {
+        revokePreviewUrl(previewUrl);
+      }
     }
   };
 
@@ -403,6 +906,385 @@ const EditEvent = ({ event, eventId, onNavigateBack, onSuccess }) => {
                 </div>
               </div>
 
+              {/* Capacity */}
+              <div className="form-group">
+                <label htmlFor="capacity">
+                  Capacity <span className="required">*</span>
+                </label>
+                <input
+                  type="number"
+                  id="capacity"
+                  name="capacity"
+                  value={formData.capacity}
+                  onChange={handleChange}
+                  className={errors.capacity ? 'error' : ''}
+                  placeholder="E.g.: 100"
+                  min="1"
+                  disabled={loading}
+                />
+                {errors.capacity && <span className="error-message">{errors.capacity}</span>}
+              </div>
+
+              {/* Booking Mode */}
+              <div className="form-group full-width">
+                <label>Booking Mode</label>
+                <div className="booking-mode-toggle">
+                  <button
+                    type="button"
+                    className={`mode-button ${bookingMode === BOOKING_MODES.LAB ? 'active' : ''}`}
+                    onClick={() => handleBookingModeChange(BOOKING_MODES.LAB)}
+                    disabled={loading}
+                  >
+                    <span className="mode-title">Book Entire Lab</span>
+                    <span className="mode-desc">Reserve the lab without selecting a specific room</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`mode-button ${bookingMode === BOOKING_MODES.ROOM ? 'active' : ''}`}
+                    onClick={() => handleBookingModeChange(BOOKING_MODES.ROOM)}
+                    disabled={loading}
+                  >
+                    <span className="mode-title">Book Specific Room</span>
+                    <span className="mode-desc">Select a room and time slots for the event</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Lab Selection */}
+              <div className="form-group full-width">
+                <label htmlFor="labId">
+                  Lab <span className="required">*</span>
+                </label>
+                {labsLoading ? (
+                  <div className="loading-inline">Loading labs...</div>
+                ) : (
+                  <select
+                    id="labId"
+                    name="labId"
+                    value={selectedLabId}
+                    onChange={(e) => handleLabChange(e.target.value)}
+                    disabled={loading || labs.length === 0}
+                    className={errors.labId ? 'error' : ''}
+                  >
+                    <option value="">Select a lab</option>
+                    {labs.map((lab) => (
+                      <option key={lab.id} value={lab.id}>
+                        {lab.name}{lab.location ? ` — ${lab.location}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {labsError && <span className="error-message">{labsError}</span>}
+                {errors.labId && <span className="error-message">{errors.labId}</span>}
+              </div>
+
+              {bookingMode === BOOKING_MODES.ROOM ? (
+                <>
+                  <div className="form-group">
+                    <label htmlFor="roomId">
+                      Room <span className="required">*</span>
+                    </label>
+                    {roomsLoading ? (
+                      <div className="loading-inline">Loading rooms...</div>
+                    ) : (
+                      <select
+                        id="roomId"
+                        name="roomId"
+                        value={selectedRoomId}
+                        onChange={(e) => handleRoomChange(e.target.value)}
+                        disabled={loading || rooms.length === 0}
+                        className={errors.roomId ? 'error' : ''}
+                      >
+                        <option value="">Select a room</option>
+                        {rooms.map((room) => (
+                          <option key={room.id} value={room.id}>
+                            {room.name} — {room.capacity} seats
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    {roomsError && <span className="error-message">{roomsError}</span>}
+                    {errors.roomId && <span className="error-message">{errors.roomId}</span>}
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="slotDate">Slot Date <span className="required">*</span></label>
+                    <input
+                      type="date"
+                      id="slotDate"
+                      name="slotDate"
+                      value={slotDate}
+                      onChange={(e) => handleSlotDateChange(e.target.value)}
+                      disabled={loading || !selectedRoomId}
+                    />
+                  </div>
+
+                  <div className="form-group full-width">
+                    <label>Available Slots</label>
+                    {slotsLoading ? (
+                      <div className="slot-container loading-inline">Loading slots...</div>
+                    ) : !selectedRoomId ? (
+                      <div className="slot-container info">Select a room to view available slots.</div>
+                    ) : !slotDate ? (
+                      <div className="slot-container info">Choose a slot date to view available slots.</div>
+                    ) : slotsError ? (
+                      <div className="slot-container error-message">{slotsError}</div>
+                    ) : slots.length === 0 ? (
+                      <div className="slot-container info">No available slots for the selected date.</div>
+                    ) : (
+                      <div className="slot-grid">
+                        {slots.map((slot) => {
+                          const isSelected = selectedSlotIds.has(slot.id);
+                          const booked = isSlotBooked(slot);
+                          const classNames = ['slot-card'];
+                          if (isSelected) classNames.push('selected');
+                          if (booked) classNames.push('booked');
+
+                          return (
+                            <button
+                              key={slot.id}
+                              type="button"
+                              className={classNames.join(' ')}
+                              onClick={() => handleToggleSlot(slot.id)}
+                              disabled={loading || booked}
+                            >
+                              <span className="slot-time">{slot.timeRange || `${formatTimeDisplay(slot.startDateTime)} - ${formatTimeDisplay(slot.endDateTime)}`}</span>
+                              <span className="slot-date">{slot.dateFormatted || formatDateDisplay(slot.startDateTime)}</span>
+                              {booked && <span className="slot-status booked">Booked</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {selectedSlotIds.size > 0 && (
+                      <div className="slot-summary">
+                        Selected {selectedSlotIds.size} slot{selectedSlotIds.size > 1 ? 's' : ''}
+                      </div>
+                    )}
+                    {errors.roomSlotIds && <span className="error-message">{errors.roomSlotIds}</span>}
+                  </div>
+                </>
+              ) : (
+                <>
+                  {selectedLabId ? (
+                    roomsLoading ? (
+                      <div className="loading-inline">Loading rooms...</div>
+                    ) : rooms.length > 0 ? (
+                      <div className="form-group full-width info" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <p>This event will reserve the entire lab. All listed rooms share the same slot selection.</p>
+                        <div className="lab-room-list">
+                          {rooms.map((room) => (
+                            <span key={room.id} className="lab-room-chip">
+                              {room.name}
+                              <span style={{ fontSize: '11px', color: '#1e40af' }}>• {room.capacity} seats</span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="slot-container info">No rooms found for this lab. Please add rooms first.</div>
+                    )
+                  ) : (
+                    <div className="slot-container info">Select a lab to manage room slots.</div>
+                  )}
+
+                  <div className="form-group">
+                    <label htmlFor="slotDate">Slot Date <span className="required">*</span></label>
+                    <input
+                      type="date"
+                      id="slotDate"
+                      name="slotDate"
+                      value={slotDate}
+                      onChange={(e) => handleSlotDateChange(e.target.value)}
+                      disabled={loading || !selectedLabId || rooms.length === 0}
+                    />
+                  </div>
+
+                  <div className="form-group full-width">
+                    <label>Available Slots</label>
+                    {slotsLoading ? (
+                      <div className="slot-container loading-inline">Loading slots...</div>
+                    ) : !selectedLabId ? (
+                      <div className="slot-container info">Select a lab to view slots.</div>
+                    ) : rooms.length === 0 ? (
+                      <div className="slot-container info">No rooms available for this lab.</div>
+                    ) : !slotDate ? (
+                      <div className="slot-container info">Choose a slot date to view available slots.</div>
+                    ) : slotsError ? (
+                      <div className="slot-container error-message">{slotsError}</div>
+                    ) : slots.length === 0 ? (
+                      <div className="slot-container info">No available slots for the selected date.</div>
+                    ) : (
+                      <div className="slot-group-list">
+                        {groupedSlots.map((group) => (
+                          <div key={group.roomId} className="slot-group-card">
+                            <div className="slot-group-header">
+                              <span>{group.roomName}</span>
+                            </div>
+                            <div className="slot-group-body">
+                              <div className="slot-grid">
+                                {group.slots.map((slot) => {
+                                  const isSelected = selectedSlotIds.has(slot.id);
+                                  const booked = isSlotBooked(slot);
+                                  const classNames = ['slot-card'];
+                                  if (isSelected) classNames.push('selected');
+                                  if (booked) classNames.push('booked');
+
+                                  return (
+                                    <button
+                                      key={slot.id}
+                                      type="button"
+                                      className={classNames.join(' ')}
+                                      onClick={() => handleToggleSlot(slot.id)}
+                                      disabled={loading || booked}
+                                    >
+                                      <span className="slot-time">{slot.timeRange || `${formatTimeDisplay(slot.startDateTime)} - ${formatTimeDisplay(slot.endDateTime)}`}</span>
+                                      <span className="slot-date">{slot.dateFormatted || formatDateDisplay(slot.startDateTime)}</span>
+                                      {booked && <span className="slot-status booked">Booked</span>}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {selectedSlotIds.size > 0 && (
+                      <div className="slot-summary">
+                        Selected {selectedSlotIds.size} slot{selectedSlotIds.size > 1 ? 's' : ''} across {selectedRoomsCount || 0} room{selectedRoomsCount === 1 ? '' : 's'}
+                      </div>
+                    )}
+                    {errors.roomSlotIds && <span className="error-message">{errors.roomSlotIds}</span>}
+                  </div>
+                </>
+              )}
+
+              {/* Event Image */}
+              <div className="form-group">
+                <div className="image-upload-header">
+                  <label>Event Cover Image</label>
+                  {isStorageAvailable() && (
+                    <button
+                      type="button"
+                      className="toggle-input-mode"
+                      onClick={handleToggleInputMode}
+                      disabled={loading || isUploading}
+                    >
+                      {useUrlInput ? 'Upload File Instead' : 'Use URL Instead'}
+                    </button>
+                  )}
+                </div>
+
+                {useUrlInput ? (
+                  <>
+                    <input
+                      type="url"
+                      id="imageUrl"
+                      name="imageUrl"
+                      value={formData.imageUrl}
+                      onChange={handleChange}
+                      placeholder="https://example.com/event-cover.jpg"
+                      disabled={loading || isUploading}
+                      className={errors.imageUrl ? 'error' : ''}
+                    />
+
+                    {formData.imageUrl && !selectedFile && !previewUrl && (
+                      <div className="current-image-section">
+                        <div className="current-image-preview">
+                          <img
+                            src={formData.imageUrl}
+                            alt="Current event"
+                            className="current-image"
+                            onError={(e) => { e.target.style.display = 'none'; }}
+                          />
+                          <div className="current-image-info">
+                            <span className="current-image-text">Current event image</span>
+                            <button
+                              type="button"
+                              className="remove-current-image-btn"
+                              onClick={() => {
+                                setFormData(prev => ({ ...prev, imageUrl: '' }));
+                                setUseUrlInput(false);
+                              }}
+                              disabled={loading || isUploading}
+                              title="Remove current image"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="file-upload-container">
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        id="eventImage"
+                        accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+                        onChange={handleFileSelect}
+                        disabled={loading || isUploading}
+                        className="file-input"
+                      />
+                      <label htmlFor="eventImage" className="file-upload-label compact">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                          <polyline points="17 8 12 3 7 8"></polyline>
+                          <line x1="12" y1="3" x2="12" y2="15"></line>
+                        </svg>
+                        <span className="upload-placeholder">
+                          {selectedFile ? selectedFile.name : 'Choose an image or drag it here'}
+                        </span>
+                        {selectedFile && (
+                          <span className="file-size">
+                            {formatFileSize(selectedFile.size)}
+                          </span>
+                        )}
+                      </label>
+                    </div>
+
+                    {isUploading && (
+                      <div className="upload-progress">
+                        <div className="progress-bar">
+                          <div className="progress-fill" style={{ width: `${uploadProgress}%` }}></div>
+                        </div>
+                        <span className="progress-text">{uploadProgress}%</span>
+                      </div>
+                    )}
+
+                    {(previewUrl || selectedFile) && (
+                      <div className="image-preview">
+                        {previewUrl && <img src={previewUrl} alt="Event preview" />}
+                        <button
+                          type="button"
+                          className="remove-image-btn"
+                          onClick={handleRemoveImage}
+                          disabled={loading || isUploading}
+                          title="Remove image"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                          </svg>
+                        </button>
+                      </div>
+                    )}
+
+                    <p className="file-upload-hint">
+                      Supported formats: JPG, PNG, GIF, WebP. Max size: 5MB
+                    </p>
+                  </>
+                )}
+
+                {errors.imageUrl && <span className="error-message">{errors.imageUrl}</span>}
+              </div>
+
               {/* Recurrence Rule */}
               <div className="form-group">
                 <label htmlFor="recurrenceRule">
@@ -451,9 +1333,9 @@ const EditEvent = ({ event, eventId, onNavigateBack, onSuccess }) => {
               <button
                 type="submit"
                 className="btn-primary"
-                disabled={loading}
+                disabled={loading || isUploading}
               >
-                {loading ? 'Updating...' : 'Update Event'}
+                {isUploading ? `Uploading... ${uploadProgress}%` : loading ? 'Updating...' : 'Update Event'}
               </button>
             </div>
           </form>

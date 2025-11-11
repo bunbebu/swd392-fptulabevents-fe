@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 // styles moved to global.css
 import { register as apiRegister } from '../../api';
+import fptBackground from '../../assets/images/truong-dai-hoc-fpt-ho-chi-minh.jpeg';
 
 function Register({ onRegistered, onSwitchToLogin }) {
   const [email, setEmail] = useState('');
@@ -45,7 +46,12 @@ function Register({ onRegistered, onSwitchToLogin }) {
 
   return (
     <div className="login-page register-page">
-      <div className="login-left">
+      <div className="login-left" style={{
+        backgroundImage: `url(${fptBackground})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat'
+      }}>
         <div className="left-overlay-grid" />
         <div className="left-ornament left-ornament--one" />
         <div className="left-ornament left-ornament--two" />

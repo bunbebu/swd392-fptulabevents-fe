@@ -45,9 +45,7 @@ const LabList = ({
   // Local filter states (for input fields before applying)
   const [localFilters, setLocalFilters] = useState({
     searchTerm: '',
-    status: '',
-    minCapacity: '',
-    maxCapacity: ''
+    status: ''
   });
 
   // API filter states
@@ -55,8 +53,6 @@ const LabList = ({
     name: '',
     location: '',
     status: '',
-    minCapacity: '',
-    maxCapacity: '',
     page: 1,
     pageSize: 8
   });
@@ -268,7 +264,7 @@ const LabList = ({
         (availableCount?.availableCount || availableCount?.AvailableCount || 0);
 
       // Determine if any filters (besides pagination) are applied
-      const hasNonPagingFilters = !!(filters.name || filters.location || filters.status !== '' || filters.minCapacity || filters.maxCapacity);
+      const hasNonPagingFilters = !!(filters.name || filters.location || filters.status !== '');
 
       // Prefer backend total count when no non-paging filters are applied
       const derivedTotalCount = (!hasNonPagingFilters && normalizedTotalCount) ? normalizedTotalCount : totalCountFromApi;
@@ -399,9 +395,7 @@ const LabList = ({
       ...prev,
       name: localFilters.searchTerm,
       location: localFilters.searchTerm,
-      status: localFilters.status,
-      minCapacity: localFilters.minCapacity,
-      maxCapacity: localFilters.maxCapacity
+      status: localFilters.status
     }));
     setCurrentPage(1);
     // loadLabs will be called automatically by useEffect when apiFilters changes
@@ -411,16 +405,12 @@ const LabList = ({
   const clearFilters = () => {
     setLocalFilters({
       searchTerm: '',
-      status: '',
-      minCapacity: '',
-      maxCapacity: ''
+      status: ''
     });
     setApiFilters({
       name: '',
       location: '',
       status: '',
-      minCapacity: '',
-      maxCapacity: '',
       page: 1,
       pageSize: 8
     });
@@ -587,20 +577,6 @@ const LabList = ({
                   <option value="Active">Active</option>
                   <option value="Inactive">Inactive</option>
                 </select>
-                <input
-                  type="number"
-                  placeholder="Min Capacity"
-                  value={localFilters.minCapacity}
-                  onChange={(e) => setLocalFilters(prev => ({ ...prev, minCapacity: e.target.value }))}
-                  className="filter-input"
-                />
-                <input
-                  type="number"
-                  placeholder="Max Capacity"
-                  value={localFilters.maxCapacity}
-                  onChange={(e) => setLocalFilters(prev => ({ ...prev, maxCapacity: e.target.value }))}
-                  className="filter-input"
-                />
               </div>
 
               <div className="filter-actions">
@@ -630,7 +606,6 @@ const LabList = ({
                   <th className="col-name">Name</th>
                   <th className="col-location">Location</th>
                   <th>Room</th>
-                  <th>Capacity</th>
                   <th>Status</th>
                   <th>Equipment Count</th>
                   <th>Members</th>
@@ -640,7 +615,7 @@ const LabList = ({
               <tbody>
                 {loading && !paginationLoading ? (
                   <tr>
-                    <td colSpan={isAdmin ? "9" : "8"} className="loading-cell">
+                    <td colSpan={isAdmin ? "8" : "7"} className="loading-cell">
                       <div className="loading-spinner"></div>
                       Loading labs...
                     </td>
@@ -657,12 +632,11 @@ const LabList = ({
                       <td><div className="skeleton-text"></div></td>
                       <td><div className="skeleton-text"></div></td>
                       <td><div className="skeleton-text"></div></td>
-                      <td><div className="skeleton-text"></div></td>
                     </tr>
                   ))
                 ) : labs.length === 0 ? (
                   <tr>
-                    <td colSpan={isAdmin ? "9" : "8"} className="no-data">
+                    <td colSpan={isAdmin ? "8" : "7"} className="no-data">
                       No lab data
                     </td>
                   </tr>
@@ -684,9 +658,6 @@ const LabList = ({
                       <td className="col-name">
                         <div>
                           <strong>{lab.name}</strong>
-                          {lab.description && (
-                            <div className="text-muted small">{lab.description}</div>
-                          )}
                         </div>
                       </td>
                       <td className="col-location">{lab.location || 'N/A'}</td>
@@ -699,7 +670,6 @@ const LabList = ({
                           <span className="text-muted">No Room</span>
                         )}
                       </td>
-                      <td>{lab.capacity}</td>
                       <td>
                         <span className={getStatusBadgeClass(lab.status)}>
                           {lab.status || 'Unknown'}

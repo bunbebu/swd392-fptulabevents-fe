@@ -81,16 +81,38 @@ const LecturerReportsManagement = () => {
       setLoading(true);
       setError(null);
 
-      const [reportsData, countData] = await Promise.all([
-        reportsApi.getUserReports(),
-        reportsApi.getUserReportCount()
-      ]);
+      let reportsData;
+      let countData;
+
+      try {
+        reportsData = await reportsApi.getUserReports();
+      } catch (err) {
+        console.error('Error fetching reports:', err);
+        // If it's auth error, show specific message
+        if (err.status === 401 || err.status === 403) {
+          setError('Authentication required. Please log in again.');
+          setReports([]);
+          setLoading(false);
+          return;
+        }
+        // Otherwise continue with empty array
+        reportsData = [];
+      }
+
+      try {
+        countData = await reportsApi.getUserReportCount();
+      } catch (err) {
+        console.error('Error fetching report count:', err);
+        countData = { count: 0 };
+      }
 
       let reportsList = [];
       if (Array.isArray(reportsData)) {
         reportsList = reportsData;
       } else if (reportsData?.data && Array.isArray(reportsData.data)) {
         reportsList = reportsData.data;
+      } else if (reportsData?.Data && Array.isArray(reportsData.Data)) {
+        reportsList = reportsData.Data;
       }
 
       setReports(reportsList);
@@ -98,7 +120,7 @@ const LecturerReportsManagement = () => {
 
     } catch (err) {
       console.error('Error loading reports:', err);
-      setError('Failed to load reports');
+      setError(err.message || 'Failed to load reports');
       setReports([]);
     } finally {
       setLoading(false);
@@ -264,9 +286,20 @@ const LecturerReportsManagement = () => {
       )}
 
       {error && (
-        <div className="error-message">
-          {error}
-          <button onClick={loadReports} className="btn btn-secondary">Retry</button>
+        <div style={{
+          background: '#fee2e2',
+          border: '1px solid #fecaca',
+          borderRadius: '8px',
+          padding: '16px 20px',
+          marginBottom: '20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between'
+        }}>
+          <span style={{ color: '#991b1b', fontWeight: '500' }}>{error}</span>
+          <button onClick={loadReports} className="btn btn-secondary" style={{ marginLeft: '12px' }}>
+            Retry
+          </button>
         </div>
       )}
 
@@ -281,7 +314,6 @@ const LecturerReportsManagement = () => {
               <th>Title</th>
               <th>Category</th>
               <th>Priority</th>
-              <th>Location</th>
               <th>Status</th>
               <th>Created</th>
               <th>Actions</th>
@@ -290,7 +322,7 @@ const LecturerReportsManagement = () => {
           <tbody>
             {reports.length === 0 ? (
               <tr>
-                <td colSpan="7" className="no-data">
+                <td colSpan="6" className="no-data">
                   No reports found. Create your first report to get started.
                 </td>
               </tr>
@@ -299,11 +331,24 @@ const LecturerReportsManagement = () => {
                 const reportId = report.id || report.Id;
                 const title = report.title || report.Title || 'Untitled';
                 const description = report.description || report.Description || '';
-                const category = report.category || report.Category || 'Other';
+                // Map 'type' field from API to 'category' for display
+                const category = report.type || report.Type || report.category || report.Category || 'Other';
                 const priority = report.priority || report.Priority || 'Medium';
-                const location = report.location || report.Location || 'N/A';
-                const status = report.status !== undefined ? report.status : report.Status;
-                const createdAt = report.createdAt || report.CreatedAt;
+                // Map status string to number: Open=0, InProgress=1, Resolved=2, Rejected=3
+                let status = report.status;
+                if (typeof status === 'string') {
+                  const statusMap = {
+                    'Open': 0,
+                    'InProgress': 1,
+                    'Resolved': 2,
+                    'Rejected': 3
+                  };
+                  status = statusMap[status] !== undefined ? statusMap[status] : 0;
+                } else if (status === undefined && report.Status !== undefined) {
+                  status = report.Status;
+                }
+                // Use reportedDate from API
+                const createdAt = report.reportedDate || report.ReportedDate || report.createdAt || report.CreatedAt;
                 const statusInfo = getStatusInfo(status);
 
                 return (
@@ -316,13 +361,12 @@ const LecturerReportsManagement = () => {
                     </td>
                     <td>{category}</td>
                     <td>
-                      <span className={`status-badge ${getPriorityBadge(priority)}`}>
+                      <span className={`status-badge ${getPriorityBadge(priority)}`} style={{ fontSize: '12px' }}>
                         {priority}
                       </span>
                     </td>
-                    <td>{location}</td>
                     <td>
-                      <span className={`status-badge status-${statusInfo.class}`}>
+                      <span className={`status-badge status-${statusInfo.class}`} style={{ fontSize: '12px' }}>
                         {statusInfo.label}
                       </span>
                     </td>

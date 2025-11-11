@@ -250,8 +250,8 @@ const BookingList = ({
     loadBookings(currentPage);
   }, [loadBookings, currentPage]);
 
-  // Format date for display
-  const formatDate = (dateString) => {
+  // Format date only (without time) for Booking Date column
+  const formatDateOnly = (dateString) => {
     if (!dateString) return 'N/A';
     try {
       const date = new Date(dateString);
@@ -259,7 +259,20 @@ const BookingList = ({
       return date.toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'short',
-        day: 'numeric',
+        day: 'numeric'
+      });
+    } catch {
+      return 'N/A';
+    }
+  };
+
+  // Format time only (without date) for Start/End Time columns
+  const formatTimeOnly = (dateString) => {
+    if (!dateString) return 'N/A';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return 'N/A';
+      return date.toLocaleTimeString('en-US', {
         hour: '2-digit',
         minute: '2-digit'
       });
@@ -605,10 +618,10 @@ const BookingList = ({
           <table className="room-table">
             <thead>
               <tr>
-                <th>ID</th>
                 <th className="col-name">Room</th>
                 {isAdmin && <th>User</th>}
                 <th>Purpose</th>
+                <th>Booking Date</th>
                 <th>Start Time</th>
                 <th>End Time</th>
                 <th>Status</th>
@@ -618,7 +631,7 @@ const BookingList = ({
             <tbody>
               {loading && !paginationLoading ? (
                 <tr>
-                  <td colSpan={isAdmin ? "8" : "7"} className="loading-cell">
+                  <td colSpan={isAdmin ? "7" : "6"} className="loading-cell">
                     <div className="loading-spinner"></div>
                     Loading bookings...
                   </td>
@@ -628,8 +641,8 @@ const BookingList = ({
                 Array.from({ length: pageSize }).map((_, index) => (
                   <tr key={`skeleton-${index}`} className="skeleton-row">
                     <td><div className="skeleton-text"></div></td>
-                    <td><div className="skeleton-text"></div></td>
                     {isAdmin && <td><div className="skeleton-text"></div></td>}
+                    <td><div className="skeleton-text"></div></td>
                     <td><div className="skeleton-text"></div></td>
                     <td><div className="skeleton-text"></div></td>
                     <td><div className="skeleton-text"></div></td>
@@ -639,17 +652,15 @@ const BookingList = ({
                 ))
               ) : filteredBookings.length === 0 ? (
                 <tr>
-                  <td colSpan={isAdmin ? "8" : "7"} className="no-data">
+                  <td colSpan={isAdmin ? "7" : "6"} className="no-data">
                     {apiFilters.searchTerm ? 'No bookings found matching your search' : 'No booking data'}
                   </td>
                 </tr>
               ) : (
                 filteredBookings.map((booking) => (
                   <tr key={booking.id} className={booking.isOptimistic ? 'optimistic-row' : ''}>
-                    <td>
-                      {typeof booking.id === 'string' && booking.id.length > 8
-                        ? `${booking.id.substring(0, 8)}...`
-                        : `#${booking.id}`}
+                    <td className="col-name">
+                      <strong>{booking.roomName}</strong>
                       {booking.isOptimistic && (
                         <span className="optimistic-indicator" title="Saving...">
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -658,13 +669,11 @@ const BookingList = ({
                         </span>
                       )}
                     </td>
-                    <td className="col-name">
-                      <strong>{booking.roomName}</strong>
-                    </td>
                     {isAdmin && <td>{booking.userName}</td>}
                     <td>{booking.purpose || 'N/A'}</td>
-                    <td>{formatDate(booking.startTime)}</td>
-                    <td>{formatDate(booking.endTime)}</td>
+                    <td>{formatDateOnly(booking.startTime)}</td>
+                    <td>{formatTimeOnly(booking.startTime)}</td>
+                    <td>{formatTimeOnly(booking.endTime)}</td>
                     <td>
                       <span className={getStatusBadgeClass(booking.status)}>
                         {getStatusLabel(booking.status)}

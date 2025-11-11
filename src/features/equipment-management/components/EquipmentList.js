@@ -566,7 +566,16 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
                 </td>
               </tr>
             ) : (
-              equipments.map((equipment) => (
+              equipments
+                .filter(equipment => {
+                  // For Lecturer role, only show Available equipment
+                  if (userRole === 'Lecturer') {
+                    const status = String(equipment.status || '').toLowerCase();
+                    return status === 'available';
+                  }
+                  return true; // Show all for Admin and other roles
+                })
+                .map((equipment) => (
                 <tr key={equipment.id}>
                   <td>
                     {equipment.id?.substring(0, 8)}...
@@ -575,7 +584,7 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
                   <td className="col-serial">{equipment.serialNumber || 'N/A'}</td>
                   <td>{equipment.type || 'N/A'}</td>
                   <td>
-                    <span className={getStatusBadgeClass(equipment.status)}>
+                    <span className={getStatusBadgeClass(equipment.status)} style={{ fontSize: '12px' }}>
                       {equipment.status || 'Unknown'}
                     </span>
                   </td>

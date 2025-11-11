@@ -379,10 +379,6 @@ const LabDetail = ({ labId, onNavigateBack, isAdmin = false, userRole = 'Student
               <span className="detail-value">{lab.location || 'N/A'}</span>
             </div>
             <div className="detail-item">
-              <label>Capacity:</label>
-              <span className="detail-value">{lab.capacity} people</span>
-            </div>
-            <div className="detail-item">
               <label>Member Count:</label>
               <span className="detail-value">{lab.memberCount || 0}</span>
             </div>
@@ -402,12 +398,6 @@ const LabDetail = ({ labId, onNavigateBack, isAdmin = false, userRole = 'Student
               <label>Last Updated:</label>
               <span className="detail-value">{formatDate(lab.lastUpdatedAt)}</span>
             </div>
-            {lab.description && (
-              <div className="detail-item full-width">
-                <label>Description:</label>
-                <span className="detail-value">{lab.description}</span>
-              </div>
-            )}
           </div>
         </div>
 

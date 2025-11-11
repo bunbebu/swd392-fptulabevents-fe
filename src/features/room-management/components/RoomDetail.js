@@ -176,10 +176,6 @@ const RoomDetail = ({ roomId, onNavigateBack }) => {
               <span className="detail-value">{room.name}</span>
             </div>
             <div className="detail-item">
-              <label>Location:</label>
-              <span className="detail-value">{room.location}</span>
-            </div>
-            <div className="detail-item">
               <label>Capacity:</label>
               <span className="detail-value">{room.capacity} people</span>
             </div>
@@ -199,26 +195,8 @@ const RoomDetail = ({ roomId, onNavigateBack }) => {
               <label>Last Updated:</label>
               <span className="detail-value">{formatDate(room.lastUpdatedAt)}</span>
             </div>
-            {room.description && (
-              <div className="detail-item full-width">
-                <label>Description:</label>
-                <span className="detail-value">{room.description}</span>
-              </div>
-            )}
           </div>
         </div>
-
-        {/* Room Image */}
-        {room.imageUrl && (
-          <div className="detail-card">
-            <div className="detail-card-header">
-              <h3>Room Image</h3>
-            </div>
-            <div className="room-image-container">
-              <img src={room.imageUrl} alt={room.name} className="room-image" />
-            </div>
-          </div>
-        )}
 
         {/* Equipment List */}
         {room.equipments && room.equipments.length > 0 && (

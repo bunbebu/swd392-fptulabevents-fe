@@ -13,9 +13,7 @@ const CreateLab = ({ onNavigateBack, onSuccess }) => {
 
   const [formData, setFormData] = useState({
     name: '',
-    description: '',
-    location: '',
-    capacity: 1
+    location: ''
   });
 
   const [errors, setErrors] = useState({});
@@ -44,10 +42,6 @@ const CreateLab = ({ onNavigateBack, onSuccess }) => {
       newErrors.location = 'Location is required';
     }
 
-    if (!formData.capacity || formData.capacity < 1) {
-      newErrors.capacity = 'Capacity must be at least 1';
-    }
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -64,9 +58,7 @@ const CreateLab = ({ onNavigateBack, onSuccess }) => {
 
       const submitData = {
         name: formData.name.trim(),
-        description: formData.description.trim(),
-        location: formData.location.trim(),
-        capacity: parseInt(formData.capacity)
+        location: formData.location.trim()
       };
 
       await labsApi.createLab(submitData);
@@ -156,40 +148,6 @@ const CreateLab = ({ onNavigateBack, onSuccess }) => {
                 {errors.location && <span className="error-message">{errors.location}</span>}
               </div>
 
-              {/* Capacity */}
-              <div className="form-group">
-                <label htmlFor="capacity">
-                  Capacity <span className="required">*</span>
-                </label>
-                <input
-                  type="number"
-                  id="capacity"
-                  name="capacity"
-                  value={formData.capacity}
-                  onChange={handleChange}
-                  className={errors.capacity ? 'error' : ''}
-                  placeholder="E.g.: 30"
-                  min="1"
-                  disabled={loading}
-                />
-                {errors.capacity && <span className="error-message">{errors.capacity}</span>}
-              </div>
-
-              {/* Description */}
-              <div className="form-group">
-                <label htmlFor="description">
-                  Description
-                </label>
-                <textarea
-                  id="description"
-                  name="description"
-                  value={formData.description}
-                  onChange={handleChange}
-                  placeholder="Detailed description of the lab..."
-                  rows="3"
-                  disabled={loading}
-                />
-              </div>
             </div>
 
             <div className="form-actions">

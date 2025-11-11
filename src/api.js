@@ -654,29 +654,21 @@ export async function getAvailableEquipmentCount() {
 export async function getRooms(filters = {}) {
   const params = new URLSearchParams();
 
-  // Map status string to enum number if needed
   const statusMap = {
-    'Available': 0,
-    'Occupied': 1,
-    'Maintenance': 2,
-    'Unavailable': 3
+    Available: 0,
+    Occupied: 1,
+    Maintenance: 2,
+    Unavailable: 3
   };
 
-  // Add filter parameters if provided
   if (filters.name) params.append('Name', filters.name);
-  if (filters.location) params.append('Location', filters.location);
   if (filters.status !== undefined && filters.status !== '') {
-    // Convert string status to number if it's a string
-    const statusValue = typeof filters.status === 'string'
-      ? statusMap[filters.status]
-      : filters.status;
-    if (statusValue !== undefined) {
-      params.append('Status', String(statusValue));
-    }
+    const statusValue = typeof filters.status === 'string' ? statusMap[filters.status] : filters.status;
+    if (statusValue !== undefined) params.append('Status', String(statusValue));
   }
   if (filters.minCapacity !== undefined) params.append('MinCapacity', String(filters.minCapacity));
   if (filters.maxCapacity !== undefined) params.append('MaxCapacity', String(filters.maxCapacity));
-  // Backend expects 0-based page index, but we use 1-based in frontend
+  if (filters.labId) params.append('LabId', filters.labId);
   if (filters.page) params.append('Page', String(filters.page - 1));
   if (filters.pageSize) params.append('PageSize', String(filters.pageSize));
 
@@ -694,6 +686,28 @@ export async function getRooms(filters = {}) {
  */
 export async function getRoomById(id) {
   return await request(`/api/rooms/${id}`, { method: 'GET' });
+}
+
+export async function getRoomSlots(roomId) {
+  return await request(`/api/rooms/${roomId}/slots`, { method: 'GET' });
+}
+
+export async function getRoomSlotsByDateRange(roomId, startDate, endDate) {
+  const params = new URLSearchParams();
+  if (startDate) params.append('startDate', new Date(startDate).toISOString());
+  if (endDate) params.append('endDate', new Date(endDate).toISOString());
+  const query = params.toString();
+  const url = query ? `/api/rooms/${roomId}/slots/date-range?${query}` : `/api/rooms/${roomId}/slots/date-range`;
+  return await request(url, { method: 'GET' });
+}
+
+export async function getAvailableRoomSlots(roomId, startDate, endDate) {
+  const params = new URLSearchParams();
+  if (startDate) params.append('startDate', new Date(startDate).toISOString());
+  if (endDate) params.append('endDate', new Date(endDate).toISOString());
+  const query = params.toString();
+  const url = query ? `/api/rooms/${roomId}/slots/available?${query}` : `/api/rooms/${roomId}/slots/available`;
+  return await request(url, { method: 'GET' });
 }
 
 /**
@@ -761,10 +775,8 @@ export async function isRoomAvailable(id, startTime, endTime) {
 export async function createRoom(roomData) {
   const payload = {
     Name: roomData.name,
-    Description: roomData.description || '',
-    Location: roomData.location,
     Capacity: roomData.capacity,
-    ImageUrl: roomData.imageUrl || null
+    LabId: roomData.labId || null
   };
 
   return await request('/api/rooms', {
@@ -786,13 +798,11 @@ export async function createRoom(roomData) {
  * @returns {Promise<Object>} Updated room data
  */
 export async function updateRoom(id, roomData) {
-  const payload = {
-    Name: roomData.name,
-    Description: roomData.description || '',
-    Location: roomData.location,
-    Capacity: roomData.capacity,
-    ImageUrl: roomData.imageUrl || null
-  };
+  const payload = {};
+
+  if (roomData.name !== undefined) payload.Name = roomData.name;
+  if (roomData.capacity !== undefined) payload.Capacity = roomData.capacity;
+  if (roomData.labId !== undefined) payload.LabId = roomData.labId;
 
   return await request(`/api/rooms/${id}`, {
     method: 'PUT',
@@ -1051,7 +1061,12 @@ export async function createEvent(eventData) {
     Location: eventData.location || '',
     Status: eventData.status !== undefined ? eventData.status : 0, // Default: Active
     Visibility: eventData.visibility !== undefined ? eventData.visibility : true,
-    RecurrenceRule: eventData.recurrenceRule || null
+    RecurrenceRule: eventData.recurrenceRule || null,
+    Capacity: eventData.capacity,
+    ImageUrl: eventData.imageUrl || null,
+    LabId: eventData.labId || null,
+    RoomId: eventData.roomId || null,
+    RoomSlotIds: eventData.roomSlotIds || null
   };
 
   return await request('/api/events', {
@@ -1086,6 +1101,11 @@ export async function updateEvent(id, eventData) {
   if (eventData.status !== undefined) payload.Status = eventData.status;
   if (eventData.visibility !== undefined) payload.Visibility = eventData.visibility;
   if (eventData.recurrenceRule !== undefined) payload.RecurrenceRule = eventData.recurrenceRule;
+  if (eventData.capacity !== undefined) payload.Capacity = eventData.capacity;
+  if (eventData.imageUrl !== undefined) payload.ImageUrl = eventData.imageUrl;
+  if (eventData.labId !== undefined) payload.LabId = eventData.labId;
+  if (eventData.roomId !== undefined) payload.RoomId = eventData.roomId;
+  if (eventData.roomSlotIds !== undefined) payload.RoomSlotIds = eventData.roomSlotIds;
 
   return await request(`/api/events/${id}`, {
     method: 'PUT',
@@ -1420,11 +1440,9 @@ export async function getActiveLabCount() {
 export async function createLab(labData) {
   const payload = {
     Name: labData.name,
-    Description: labData.description || '',
     Location: labData.location || '',
-    Capacity: labData.capacity,
-    RoomId: labData.roomId || null,
-    Status: labData.status !== undefined ? labData.status : 0
+    Status: labData.status !== undefined ? labData.status : 0,
+    RoomIds: labData.roomIds || null
   };
 
   return await request('/api/labs', {
@@ -1441,14 +1459,12 @@ export async function createLab(labData) {
  * @returns {Promise<Object>} Updated lab data
  */
 export async function updateLab(id, labData) {
-  const payload = {
-    Name: labData.name,
-    Description: labData.description || '',
-    Location: labData.location || '',
-    Capacity: labData.capacity,
-    RoomId: labData.roomId || null,
-    Status: labData.status
-  };
+  const payload = {};
+
+  if (labData.name !== undefined) payload.Name = labData.name;
+  if (labData.location !== undefined) payload.Location = labData.location;
+  if (labData.status !== undefined) payload.Status = labData.status;
+  if (labData.roomIds !== undefined) payload.RoomIds = labData.roomIds;
 
   return await request(`/api/labs/${id}`, {
     method: 'PUT',
@@ -1600,6 +1616,9 @@ export const equipmentApi = {
 export const roomsApi = {
   getRooms,
   getRoomById,
+  getRoomSlots,
+  getRoomSlotsByDateRange,
+  getAvailableRoomSlots,
   getAvailableRooms,
   getRoomCount,
   getAvailableRoomCount,
@@ -1911,7 +1930,7 @@ export async function getBookingById(id) {
  */
 export async function createBooking(bookingData) {
   const payload = {
-    RoomId: bookingData.roomId,
+    RoomId: bookingData.roomId || null, // Optional, backend will get it from event if EventId is provided
     StartTime: bookingData.startTime,
     EndTime: bookingData.endTime,
     Purpose: bookingData.purpose,

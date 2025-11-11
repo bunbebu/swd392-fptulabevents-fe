@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { eventApi, authApi } from '../../../api';
+import { eventApi, authApi, bookingApi } from '../../../api';
 import CreateEvent from '../admin/CreateEvent';
 import EditEvent from '../admin/EditEvent';
 
@@ -23,7 +23,7 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
   const [paginationLoading, setPaginationLoading] = useState(false);
   const [error, setError] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize] = useState(8);
+  const [pageSize] = useState(9);
   const [totalPages, setTotalPages] = useState(1);
   const [totalEvents, setTotalEvents] = useState(0);
   // eslint-disable-next-line no-unused-vars
@@ -58,28 +58,68 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
   });
 
   const isAdmin = userRole === 'Admin';
-  const canCreateEvent = isAdmin; // Only Admin can create events
+  const canCreateEvent = isAdmin || userRole === 'Lecturer';
+  const isStudent = userRole === 'Student';
+  
+  // State for registered events (for students)
+  const [registeredEventIds, setRegisteredEventIds] = useState(new Set());
+  const [registeringEventId, setRegisteringEventId] = useState(null);
+  const [confirmRegisterEvent, setConfirmRegisterEvent] = useState(null);
 
   // Helper function to normalize event data (handle both Title/title)
   const normalizeEvent = (event) => {
+    // Get location from various sources
+    let location = event.location || event.Location;
+    
+    // Debug: Log to see what data is available
+    console.log('Normalizing event:', {
+      id: event.id || event.Id,
+      hasLocation: !!(event.location || event.Location),
+      hasRoomName: !!(event.roomName || event.RoomName),
+      hasLabName: !!(event.labName || event.LabName),
+      hasRoomSlots: !!(event.roomSlots || event.RoomSlots),
+      roomSlotsLength: (event.roomSlots || event.RoomSlots || []).length,
+      allKeys: Object.keys(event)
+    });
+    
+    // If no location, try to get from roomName, labName, or roomSlots
+    if (!location || location === 'N/A' || location === '') {
+      location = event.roomName || event.RoomName;
+    }
+    if (!location || location === 'N/A' || location === '') {
+      location = event.labName || event.LabName;
+    }
+    if (!location || location === 'N/A' || location === '') {
+      const roomSlots = event.roomSlots || event.RoomSlots || [];
+      if (roomSlots.length > 0) {
+        const firstSlot = roomSlots[0];
+        location = firstSlot.roomName || firstSlot.RoomName || 
+                   (firstSlot.room && (firstSlot.room.name || firstSlot.room.Name)) ||
+                   (firstSlot.Room && (firstSlot.Room.name || firstSlot.Room.Name));
+        console.log('Got location from roomSlots:', location);
+      }
+    }
+    
     return {
       ...event,
       id: event.id || event.Id,
       title: event.title || event.Title || 'Untitled Event',
       description: event.description || event.Description,
-      location: event.location || event.Location,
+      location: location || 'N/A',
       startDate: event.startDate || event.StartDate,
       endDate: event.endDate || event.EndDate,
       status: event.status !== undefined ? event.status : event.Status,
       createdBy: event.createdBy || event.CreatedBy,
-      bookingCount: event.bookingCount || event.BookingCount || 0
+      bookingCount: event.bookingCount || event.BookingCount || 0,
+      roomName: event.roomName || event.RoomName,
+      labName: event.labName || event.LabName,
+      roomSlots: event.roomSlots || event.RoomSlots || []
     };
   };
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
-    window.clearTimeout(showToast._tid);
-    showToast._tid = window.setTimeout(() => setToast(null), 3000);
+    // No timeout - toast will remain visible until manually dismissed or replaced
   };
 
   // Load event data with pagination
@@ -180,7 +220,56 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
       // Normalize event data to handle both Title/title properties
       const normalizedEvents = eventData.map(event => normalizeEvent(event));
 
+      // Set events first (without location)
       setEvents(normalizedEvents);
+
+      // Load location for events that don't have it (from event detail) - lazy load
+      const loadLocationsForEvents = async () => {
+        const eventsNeedingLocation = normalizedEvents.filter(e => !e.location || e.location === 'N/A' || e.location === '');
+        
+        if (eventsNeedingLocation.length === 0) {
+          return;
+        }
+
+        // Load location for each event in parallel (limit to visible events only)
+        const eventsWithLocation = await Promise.all(
+          normalizedEvents.map(async (event) => {
+            // If event already has location, return as is
+            if (event.location && event.location !== 'N/A' && event.location !== '') {
+              return event;
+            }
+
+            // Load event detail to get location
+            try {
+              const eventDetail = await eventApi.getEventById(event.id);
+              const location = eventDetail.location || eventDetail.Location ||
+                              eventDetail.roomName || eventDetail.RoomName ||
+                              eventDetail.labName || eventDetail.LabName ||
+                              (eventDetail.roomSlots && eventDetail.roomSlots.length > 0 
+                                ? eventDetail.roomSlots[0].roomName || eventDetail.roomSlots[0].RoomName 
+                                : null) ||
+                              'N/A';
+              
+              return {
+                ...event,
+                location: location,
+                roomName: eventDetail.roomName || eventDetail.RoomName,
+                labName: eventDetail.labName || eventDetail.LabName,
+                roomSlots: eventDetail.roomSlots || eventDetail.RoomSlots || []
+              };
+            } catch (error) {
+              console.error(`Error loading location for event ${event.id}:`, error);
+              return event; // Return event without location if error
+            }
+          })
+        );
+
+        // Update events with location
+        setEvents(eventsWithLocation);
+      };
+
+      // Load locations asynchronously (don't block UI)
+      loadLocationsForEvents();
       setTotalPages(derivedTotalPages);
       setTotalEvents(derivedTotalCount);
       setStats({ total: totalCount, active: activeCount });
@@ -210,6 +299,208 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
   useEffect(() => {
     loadEvents();
   }, [loadEvents]);
+
+  // Load registered events for students
+  const loadRegisteredEvents = useCallback(async () => {
+    if (!isStudent) return;
+    
+    try {
+      const storedUser = window.localStorage.getItem('user') || window.sessionStorage.getItem('user');
+      if (!storedUser) return;
+      
+      const user = JSON.parse(storedUser);
+      if (!user?.id) return;
+      
+      const response = await bookingApi.getBookings({
+        userId: user.id,
+        pageSize: 100
+      });
+      
+      const bookings = Array.isArray(response) ? response : (response?.data || []);
+      
+      // Filter bookings that have EventId (event registrations)
+      const eventBookings = bookings.filter(booking => {
+        const eventId = booking.eventId || booking.EventId;
+        return eventId != null && eventId !== '';
+      });
+      
+      // Get unique event IDs
+      const eventIds = new Set(eventBookings.map(b => b.eventId || b.EventId));
+      setRegisteredEventIds(eventIds);
+    } catch (error) {
+      console.error('Error loading registered events:', error);
+    }
+  }, [isStudent]);
+
+  useEffect(() => {
+    if (isStudent) {
+      loadRegisteredEvents();
+    }
+  }, [isStudent, loadRegisteredEvents]);
+
+  // Debug: Log when confirmRegisterEvent changes
+  useEffect(() => {
+    console.log('confirmRegisterEvent state changed:', confirmRegisterEvent);
+  }, [confirmRegisterEvent]);
+
+  // Register for event
+  const handleRegisterEvent = (event) => {
+    console.log('handleRegisterEvent called with event:', event);
+    
+    if (!isStudent) {
+      console.log('Not a student, returning');
+      return;
+    }
+    
+    const storedUser = window.localStorage.getItem('user') || window.sessionStorage.getItem('user');
+    if (!storedUser) {
+      showToast('Please log in to register for events', 'error');
+      return;
+    }
+    
+    const user = JSON.parse(storedUser);
+    if (!user?.id) {
+      showToast('User information not found', 'error');
+      return;
+    }
+    
+    // Check if already registered
+    if (registeredEventIds.has(event.id)) {
+      showToast('You have already registered for this event', 'error');
+      return;
+    }
+    
+    // Check event status
+    if (event.status === 'Cancelled' || event.status === 2) {
+      showToast('This event has been cancelled', 'error');
+      return;
+    }
+    
+    if (event.status === 'Completed' || event.status === 3) {
+      showToast('This event has been completed', 'error');
+      return;
+    }
+    
+    // Check capacity
+    if (event.capacity && event.bookingCount >= event.capacity) {
+      showToast('This event has reached its capacity', 'error');
+      return;
+    }
+    
+    // Note: We don't check room slots here because event list items may not include this info
+    // We'll check it in handleConfirmedRegister after fetching event details
+    
+    // Show confirm modal
+    console.log('Setting confirmRegisterEvent to:', event);
+    setConfirmRegisterEvent(event);
+  };
+
+  // Handle confirmed registration
+  const handleConfirmedRegister = async () => {
+    if (!confirmRegisterEvent) return;
+    
+    const event = confirmRegisterEvent;
+    setConfirmRegisterEvent(null);
+    setRegisteringEventId(event.id);
+    
+    try {
+      // Get event details to get room information
+      const eventDetails = await eventApi.getEventById(event.id);
+      
+      console.log('Event details for registration:', eventDetails);
+      console.log('Event details roomSlots:', eventDetails.roomSlots || eventDetails.RoomSlots);
+      
+      // Get roomId from event (try multiple sources)
+      let roomId = eventDetails.roomId || eventDetails.RoomId;
+      
+      // If not found, try to get from roomSlots
+      if (!roomId && eventDetails.roomSlots && eventDetails.roomSlots.length > 0) {
+        const firstSlot = eventDetails.roomSlots[0];
+        console.log('First slot from roomSlots:', firstSlot);
+        roomId = firstSlot.roomId || firstSlot.RoomId || 
+                 (firstSlot.room && (firstSlot.room.id || firstSlot.room.Id)) ||
+                 (firstSlot.Room && (firstSlot.Room.id || firstSlot.Room.Id));
+      }
+      
+      // Also try RoomSlots (capital R)
+      if (!roomId && eventDetails.RoomSlots && eventDetails.RoomSlots.length > 0) {
+        const firstSlot = eventDetails.RoomSlots[0];
+        console.log('First slot from RoomSlots:', firstSlot);
+        roomId = firstSlot.roomId || firstSlot.RoomId || 
+                 (firstSlot.room && (firstSlot.room.id || firstSlot.room.Id)) ||
+                 (firstSlot.Room && (firstSlot.Room.id || firstSlot.Room.Id));
+      }
+      
+      console.log('Extracted roomId:', roomId);
+      console.log('Room slots count:', (eventDetails.roomSlots || eventDetails.RoomSlots || []).length);
+      
+      // Check if event has room slots (required by backend)
+      const roomSlots = eventDetails.roomSlots || eventDetails.RoomSlots || [];
+      if (roomSlots.length === 0) {
+        console.log('Event has no room slots, showing error message and returning early');
+        // Show a more user-friendly error message
+        showToast('This event is not properly configured. It does not have any room slots assigned. Please contact the administrator to set up the event properly before registering.', 'error');
+        return; // Return early instead of throwing to avoid showing error toast twice
+      }
+      
+      console.log('Event has room slots, proceeding with booking creation');
+      
+      // Create booking for event
+      // Backend will automatically get roomId from event's RoomSlots, so we don't need to send it
+      // But we can include it if we found it (optional)
+      const bookingPayload = {
+        eventId: event.id,
+        startTime: event.startDate || event.StartDate,
+        endTime: event.endDate || event.EndDate,
+        purpose: `Event registration for ${event.title}`,
+        notes: `Registered for event: ${event.title}`
+      };
+      
+      // Only include roomId if we found it (optional, backend will get it from event's RoomSlots)
+      if (roomId) {
+        bookingPayload.roomId = roomId;
+      }
+      
+      console.log('Creating booking with payload:', bookingPayload);
+      await bookingApi.createBooking(bookingPayload);
+      
+      // Update registered events
+      setRegisteredEventIds(prev => new Set([...prev, event.id]));
+      
+      // Update event booking count
+      setEvents(prevEvents => 
+        prevEvents.map(e => 
+          e.id === event.id 
+            ? { ...e, bookingCount: (e.bookingCount || 0) + 1 }
+            : e
+        )
+      );
+      
+      showToast('Successfully registered for event!', 'success');
+    } catch (error) {
+      console.error('Error registering for event:', error);
+      
+      // Handle specific error messages
+      let errorMessage = error.message || error.data?.message || error.data?.Message || 'Failed to register for event';
+      
+      // Improve error messages for common cases
+      if (errorMessage.includes('RoomSlots') || errorMessage.includes('room slots')) {
+        errorMessage = 'This event is not properly configured. It does not have any room slots assigned. Please contact the administrator to set up the event properly.';
+      } else if (errorMessage.includes('capacity')) {
+        errorMessage = 'This event has reached its maximum capacity.';
+      } else if (errorMessage.includes('already')) {
+        errorMessage = 'You have already registered for this event.';
+      } else if (errorMessage.includes('cancelled')) {
+        errorMessage = 'This event has been cancelled and cannot accept registrations.';
+      } else if (errorMessage.includes('completed')) {
+        errorMessage = 'This event has been completed and cannot accept registrations.';
+      }
+      
+      showToast(errorMessage, 'error');
+    } finally {
+      setRegisteringEventId(null);
+    }
+  };
 
   // Pagination handler
   const handlePageChange = (newPage) => {
@@ -585,126 +876,242 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
             </div>
           </div>
 
-          <div className="room-table-container">
-            <table className="room-table">
-              <thead>
-                <tr>
-                  {isAdmin && <th>ID</th>}
-                  <th className="col-name">Title</th>
-                  <th className="col-location">Location</th>
-                  <th>Start Date</th>
-                  <th>End Date</th>
-                  <th>Status</th>
-                  <th>Bookings</th>
-                  <th>Created By</th>
-                  {isAdmin && <th>Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {loading && !paginationLoading ? (
-                  <tr>
-                    <td colSpan={isAdmin ? "9" : "7"} className="loading-cell">
-                      <div className="loading-spinner"></div>
-                      Loading events...
-                    </td>
-                  </tr>
-                ) : paginationLoading ? (
-                  // Show skeleton rows during pagination
-                  Array.from({ length: pageSize }).map((_, index) => (
-                    <tr key={`skeleton-${index}`} className="skeleton-row">
-                      {isAdmin && <td><div className="skeleton-text"></div></td>}
-                      <td><div className="skeleton-text"></div></td>
-                      <td><div className="skeleton-text"></div></td>
-                      <td><div className="skeleton-text"></div></td>
-                      <td><div className="skeleton-text"></div></td>
-                      <td><div className="skeleton-text"></div></td>
-                      <td><div className="skeleton-text"></div></td>
-                      <td><div className="skeleton-text"></div></td>
-                      {isAdmin && <td><div className="skeleton-text"></div></td>}
-                    </tr>
-                  ))
-                ) : events.length === 0 ? (
-                  <tr>
-                    <td colSpan={isAdmin ? "9" : "7"} className="no-data">
-                      No event data
-                    </td>
-                  </tr>
-                ) : (
-                  events.map((event) => (
-                    <tr key={event.id}>
-                      {isAdmin && <td>{event.id?.substring(0, 8)}...</td>}
-                      <td className="col-name">
-                        <div>
-                          <strong>{event.title}</strong>
-                          {event.description && (
-                            <div className="text-muted small">{event.description.substring(0, 50)}{event.description.length > 50 ? '...' : ''}</div>
+          <div className="event-card-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+            {loading && !paginationLoading ? (
+              Array.from({ length: pageSize }).map((_, idx) => (
+                <div key={`skeleton-card-${idx}`} className="event-card" style={{ border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', background: '#fff', minHeight: 220 }}>
+                  <div style={{ height: 140, background: '#f1f5f9' }}></div>
+                  <div style={{ padding: 12 }}>
+                    <div className="skeleton-text" style={{ width: '60%', height: 12, marginBottom: 8, background: '#e2e8f0' }}></div>
+                    <div className="skeleton-text" style={{ width: '40%', height: 10, background: '#e2e8f0' }}></div>
+                  </div>
+                </div>
+              ))
+            ) : events.length === 0 ? (
+              <div className="no-data" style={{ gridColumn: '1 / -1', textAlign: 'center', color: '#64748b' }}>No event data</div>
+            ) : (
+              <>
+                {events.map((event) => {
+                  const idShort = event.id?.substring(0, 8) || '';
+                  return (
+                    <div key={event.id} className="event-card" style={{ border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', background: '#fff', display: 'flex', flexDirection: 'column' }}>
+                      <div style={{ position: 'relative', height: 140, background: '#f8fafc' }}>
+                        {event.imageUrl ? (
+                          <img src={event.imageUrl} alt={`${event.title} cover`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : (
+                          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 12 }}>No image</div>
+                        )}
+                        <span className={getStatusBadgeClass(event.status)} style={{ position: 'absolute', top: 8, left: 8 }}>{event.status || 'Unknown'}</span>
+                      </div>
+                      <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                          <h3 style={{ fontSize: 16, margin: 0, color: '#0f172a' }}>{event.title}</h3>
+                          {isAdmin && (
+                            <span style={{ fontSize: 11, color: '#94a3b8' }}>#{idShort}</span>
                           )}
                         </div>
-                      </td>
-                      <td className="col-location">{event.location || 'N/A'}</td>
-                      <td>{formatDate(event.startDate)}</td>
-                      <td>{formatDate(event.endDate)}</td>
-                      <td>
-                        <span className={getStatusBadgeClass(event.status)}>
-                          {event.status || 'Unknown'}
-                        </span>
-                      </td>
-                      <td>{event.bookingCount || 0}</td>
-                      <td>{event.createdBy || 'N/A'}</td>
-                      {isAdmin && (
-                        <td>
-                          <div className="action-buttons">
-                            <button
-                              className="btn btn-sm btn-icon btn-icon-outline color-yellow"
-                              onClick={() => {
-                                if (onViewEvent) {
-                                  onViewEvent(event.id);
-                                }
-                              }}
-                              disabled={actionLoading}
-                              aria-label="View details"
-                              title="View"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/>
-                                <circle cx="12" cy="12" r="3"/>
-                              </svg>
-                            </button>
-                            <button
-                              className="btn btn-sm btn-icon btn-icon-outline color-blue"
-                              onClick={() => openEditPage(event)}
-                              disabled={actionLoading}
-                              aria-label="Edit event"
-                              title="Edit"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M12 20h9"/>
-                                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/>
-                              </svg>
-                            </button>
-                            <button
-                              className="btn btn-sm btn-icon btn-icon-outline color-red"
-                              onClick={() => setConfirmDeleteEvent(event)}
-                              disabled={actionLoading}
-                              aria-label="Delete event"
-                              title="Delete"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <polyline points="3 6 5 6 21 6"/>
-                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
-                                <path d="M10 11v6"/>
-                                <path d="M14 11v6"/>
-                                <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>
-                              </svg>
-                            </button>
+                        {event.description && (
+                          <div className="text-muted small" style={{ color: '#64748b' }}>
+                            {event.description.substring(0, 80)}{event.description.length > 80 ? '…' : ''}
                           </div>
-                        </td>
-                      )}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                        )}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 4 }}>
+                          <div style={{ fontSize: 12, color: '#334155' }}>Start: <strong>{formatDate(event.startDate)}</strong></div>
+                          <div style={{ fontSize: 12, color: '#334155' }}>End: <strong>{formatDate(event.endDate)}</strong></div>
+                          <div style={{ fontSize: 12, color: '#334155' }}>Capacity: <strong>{typeof event.capacity === 'number' ? event.capacity : 'N/A'}</strong></div>
+                          <div style={{ fontSize: 12, color: '#334155' }}>Registered: <strong>{event.bookingCount || 0}</strong></div>
+                        </div>
+                        <div style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'space-between', 
+                          marginTop: 12,
+                          paddingTop: 12,
+                          borderTop: '1px solid #e5e7eb',
+                          gap: 12
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#64748b', flexShrink: 0 }}>
+                              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                              <circle cx="12" cy="10" r="3"></circle>
+                            </svg>
+                            <span style={{ fontSize: 12, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {event.location || 'N/A'}
+                            </span>
+                          </div>
+                          <div className="action-buttons" style={{ 
+                            display: 'flex !important', 
+                            flexDirection: 'row !important',
+                            flexWrap: 'nowrap !important',
+                            gap: 6, 
+                            alignItems: 'center',
+                            flexShrink: 0,
+                            minWidth: 0
+                          }}>
+                            {isStudent && (
+                              registeredEventIds.has(event.id) ? (
+                                <button
+                                  className="btn btn-sm"
+                                  style={{ 
+                                    background: '#10b981', 
+                                    color: 'white',
+                                    border: 'none',
+                                    padding: '0 12px',
+                                    height: '32px',
+                                    fontSize: '12px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '4px',
+                                    whiteSpace: 'nowrap',
+                                    lineHeight: '1',
+                                    flexShrink: 0
+                                  }}
+                                  disabled
+                                  title="Already registered"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M20 6L9 17l-5-5"/>
+                                  </svg>
+                                  Registered
+                                </button>
+                              ) : (
+                                (() => {
+                                  // Check if event has room slots (if available in list)
+                                  const eventRoomSlots = event.roomSlots || event.RoomSlots || [];
+                                  const hasRoomSlots = eventRoomSlots.length > 0;
+                                  const isDisabled = registeringEventId === event.id || actionLoading || !hasRoomSlots;
+                                  
+                                  return (
+                                    <button
+                                      className="btn btn-sm"
+                                      style={{ 
+                                        background: isDisabled && !hasRoomSlots ? '#9ca3af' : '#3b82f6', 
+                                        color: 'white',
+                                        border: 'none',
+                                        padding: '0 12px',
+                                        height: '32px',
+                                        fontSize: '12px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '4px',
+                                        whiteSpace: 'nowrap',
+                                        lineHeight: '1',
+                                        flexShrink: 0,
+                                        cursor: isDisabled ? 'not-allowed' : 'pointer',
+                                        opacity: isDisabled ? 0.6 : 1
+                                      }}
+                                      onClick={() => handleRegisterEvent(event)}
+                                      disabled={isDisabled}
+                                      title={
+                                        !hasRoomSlots 
+                                          ? 'This event is not properly configured. It does not have any room slots assigned. Please contact the administrator.'
+                                          : 'Register for event'
+                                      }
+                                    >
+                                  {registeringEventId === event.id ? (
+                                    <>
+                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="spinning">
+                                        <path d="M21 12a9 9 0 11-6.219-8.56"/>
+                                      </svg>
+                                      Registering...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M5 12h14"></path>
+                                        <path d="M12 5v14"></path>
+                                      </svg>
+                                      Register
+                                    </>
+                                  )}
+                                    </button>
+                                  );
+                                })()
+                              )
+                            )}
+                            {(isAdmin || userRole === 'Lecturer') && (
+                              <button
+                                className="btn btn-sm btn-icon btn-icon-outline color-blue"
+                                onClick={() => openEditPage(event)}
+                                disabled={actionLoading}
+                                aria-label="Edit event"
+                                title="Edit"
+                                style={{ 
+                                  width: '32px', 
+                                  height: '32px', 
+                                  padding: 0,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center'
+                                }}
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M12 20h9"/>
+                                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+                                </svg>
+                              </button>
+                            )}
+                            {isAdmin && (
+                              <button
+                                className="btn btn-sm btn-icon btn-icon-outline color-red"
+                                onClick={() => setConfirmDeleteEvent(event)}
+                                disabled={actionLoading}
+                                aria-label="Delete event"
+                                title="Delete"
+                                style={{ 
+                                  width: '32px', 
+                                  height: '32px', 
+                                  padding: 0,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center'
+                                }}
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <polyline points="3 6 5 6 21 6"/>
+                                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+                                  <path d="M10 11v6"/>
+                                  <path d="M14 11v6"/>
+                                  <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>
+                                </svg>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {/* Add placeholder divs to fill the last row if needed */}
+                {(() => {
+                  const totalItems = events.length;
+                  const remaining = totalItems % 3;
+                  // If remaining is 0, all rows are full (no placeholders needed)
+                  // If remaining is 1 or 2, we need to add placeholders to fill the last row
+                  if (remaining === 0) return null;
+                  const placeholdersNeeded = 3 - remaining;
+                  console.log(`Events: ${totalItems}, Remaining: ${remaining}, Placeholders needed: ${placeholdersNeeded}`);
+                  return Array.from({ length: placeholdersNeeded }).map((_, idx) => (
+                    <div 
+                      key={`placeholder-${idx}`} 
+                      className="event-card"
+                      style={{ 
+                        opacity: 0,
+                        pointerEvents: 'none',
+                        border: '1px solid transparent',
+                        minHeight: 220,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        width: '100%'
+                      }} 
+                      aria-hidden="true" 
+                    />
+                  ));
+                })()}
+              </>
+            )}
           </div>
 
           {/* Pagination */}
@@ -824,6 +1231,81 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
                   {actionLoading ? 'Deleting...' : 'Delete'}
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Register Event Modal */}
+      {confirmRegisterEvent && (
+        <div className="modal-overlay" onClick={() => setConfirmRegisterEvent(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Confirm Event Registration</h3>
+            </div>
+            <div className="modal-body">
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', marginBottom: '16px' }}>
+                <div style={{
+                  width: '48px',
+                  height: '48px',
+                  borderRadius: '12px',
+                  backgroundColor: '#3b82f6',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 11l3 3L22 4"></path>
+                    <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"></path>
+                  </svg>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontSize: '16px', color: '#374151', margin: 0, lineHeight: '1.5' }}>
+                    Do you want to register for <strong style={{ color: '#111827' }}>"{confirmRegisterEvent.title || confirmRegisterEvent.Title}"</strong>?
+                  </p>
+                  <div style={{ marginTop: '12px', padding: '12px', backgroundColor: '#f3f4f6', borderRadius: '8px' }}>
+                    <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '4px' }}>
+                      <strong style={{ color: '#374151' }}>Event Details:</strong>
+                    </div>
+                    <div style={{ fontSize: '13px', color: '#6b7280', lineHeight: '1.6' }}>
+                      <div>📅 <strong>Date:</strong> {confirmRegisterEvent.startDate ? new Date(confirmRegisterEvent.startDate).toLocaleDateString() : 'N/A'}</div>
+                      {confirmRegisterEvent.location && confirmRegisterEvent.location !== 'N/A' && (
+                        <div>📍 <strong>Location:</strong> {confirmRegisterEvent.location}</div>
+                      )}
+                      {confirmRegisterEvent.capacity > 0 && (
+                        <div>👥 <strong>Capacity:</strong> {confirmRegisterEvent.bookingCount || 0} / {confirmRegisterEvent.capacity} registered</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <p style={{ fontSize: '14px', color: '#6b7280', margin: 0 }}>
+                You will receive a confirmation once your registration is approved.
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button
+                className="btn btn-secondary"
+                onClick={() => setConfirmRegisterEvent(null)}
+                disabled={registeringEventId === confirmRegisterEvent.id}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleConfirmedRegister}
+                disabled={registeringEventId === confirmRegisterEvent.id}
+              >
+                {registeringEventId === confirmRegisterEvent.id ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                    Registering...
+                  </>
+                ) : (
+                  'Confirm Registration'
+                )}
+              </button>
             </div>
           </div>
         </div>

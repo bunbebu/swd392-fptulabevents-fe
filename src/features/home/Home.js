@@ -20,7 +20,7 @@ function Home({ user: userProp }) {
   const [selectedLabId, setSelectedLabId] = useState(null);
 
   // Data states
-  const [upcomingBookings, setUpcomingBookings] = useState([]);
+  const [registeredEvents, setRegisteredEvents] = useState([]);
   const [upcomingEvents, setUpcomingEvents] = useState([]);
   const [availableLabs, setAvailableLabs] = useState([]);
   const [notifications, setNotifications] = useState([]);
@@ -67,14 +67,14 @@ function Home({ user: userProp }) {
           setLoadingData(true);
           console.log('Calling loadDashboardData - will call loadUpcomingBookings');
           
-          // Load bookings
-          const loadUpcomingBookings = async () => {
+          // Load registered events (events user has registered for)
+          const loadRegisteredEvents = async () => {
             try {
-              console.log('=== LOADING UPCOMING BOOKINGS - START ===');
+              console.log('=== LOADING REGISTERED EVENTS - START ===');
               console.log('User Id:', user?.id);
               
               if (!user?.id) {
-                console.log('No user ID found - cannot load bookings');
+                console.log('No user ID found - cannot load registered events');
                 return;
               }
               
@@ -82,7 +82,7 @@ function Home({ user: userProp }) {
               
               const response = await bookingApi.getBookings({
                 userId: user.id,
-                pageSize: 10
+                pageSize: 100
               });
 
               console.log('Booking API response:', response);
@@ -90,47 +90,50 @@ function Home({ user: userProp }) {
               const bookings = Array.isArray(response) ? response : (response?.data || []);
               
               console.log('Parsed bookings:', bookings);
-              console.log('Number of bookings:', bookings.length);
               
-              // Debug: Show first booking
-              if (bookings.length > 0) {
-                console.log('First booking:', bookings[0]);
-                console.log('First booking keys:', Object.keys(bookings[0]));
-                console.log('First booking EndTime:', bookings[0].EndTime);
-                console.log('First booking endTime:', bookings[0].endTime);
-                console.log('EndTime type:', typeof bookings[0].EndTime);
-                console.log('EndTime parsed:', new Date(bookings[0].EndTime));
-              }
-              
-              // Filter to only show upcoming bookings (EndTime >= now)
-              const now = new Date();
-              console.log('Current time:', now);
-              
-              const upcomingBookings = bookings.filter(booking => {
-                // Try both camelCase and PascalCase
-                const endTimeValue = booking.endTime || booking.EndTime;
-                if (!endTimeValue) {
-                  console.log(`Booking ${booking.Id || booking.id}: No endTime found`);
-                  return false;
-                }
-                const endTime = new Date(endTimeValue);
-                const isUpcoming = endTime >= now;
-                console.log(`Booking ${booking.Id || booking.id}: EndTime=${endTime}, isUpcoming=${isUpcoming}`);
-                return isUpcoming;
+              // Filter bookings that have EventId (event registrations)
+              const eventBookings = bookings.filter(booking => {
+                const eventId = booking.eventId || booking.EventId;
+                return eventId != null && eventId !== '';
               });
               
-              console.log('Upcoming bookings after filter:', upcomingBookings);
-              console.log('Number of upcoming bookings:', upcomingBookings.length);
-              console.log('=== LOADING UPCOMING BOOKINGS - END ===');
+              console.log('Event bookings found:', eventBookings.length);
               
-              setUpcomingBookings(upcomingBookings);
-              console.log('After setUpcomingBookings, state updated');
+              // Get unique event IDs
+              const eventIds = [...new Set(eventBookings.map(b => b.eventId || b.EventId))];
+              console.log('Unique event IDs:', eventIds);
+              
+              // Load event details for each event ID
+              const eventsPromises = eventIds.map(async (eventId) => {
+                try {
+                  const event = await eventApi.getEventById(eventId);
+                  return normalizeEvent(event);
+                } catch (error) {
+                  console.error(`Error loading event ${eventId}:`, error);
+                  return null;
+                }
+              });
+              
+              const events = (await Promise.all(eventsPromises)).filter(e => e != null);
+              
+              // Filter to only show upcoming events (StartDate >= today)
+              const today = new Date();
+              today.setHours(0, 0, 0, 0);
+              
+              const upcomingRegisteredEvents = events.filter(event => {
+                if (!event.StartDate) return false;
+                const startDate = new Date(event.StartDate);
+                return startDate >= today;
+              });
+              
+              console.log('Registered events:', upcomingRegisteredEvents.length);
+              console.log('=== LOADING REGISTERED EVENTS - END ===');
+              
+              setRegisteredEvents(upcomingRegisteredEvents);
             } catch (error) {
-              console.error('=== ERROR LOADING BOOKINGS ===');
+              console.error('=== ERROR LOADING REGISTERED EVENTS ===');
               console.error('Error details:', error);
-              console.error('Error message:', error.message);
-              console.error('Error stack:', error.stack);
-              setUpcomingBookings([]);
+              setRegisteredEvents([]);
             }
           };
           
@@ -217,7 +220,7 @@ function Home({ user: userProp }) {
           console.log('Will call: loadUpcomingBookings, loadUpcomingEvents, loadNotifications, loadAvailableLabs');
           
           await Promise.all([
-            loadUpcomingBookings(),
+            loadRegisteredEvents(),
             loadUpcomingEvents(),
             loadNotifications(),
             loadAvailableLabs()
@@ -259,7 +262,7 @@ function Home({ user: userProp }) {
     };
   }, []);
 
-  // Load bookings data
+  // Load bookings data (for students: registered events, for lecturers/admins: bookings)
   const loadBookingsData = async () => {
     try {
       setLoadingData(true);
@@ -268,24 +271,74 @@ function Home({ user: userProp }) {
         return;
       }
       
-      console.log('Loading all bookings for user:', user.id);
-      
-      const response = await bookingApi.getBookings({
-        userId: user.id,
-        pageSize: 50
-      });
+      // For students, load registered events
+      if (userRole === 'Student' || (!isAdmin && !isLecturer)) {
+        console.log('Loading registered events for user:', user.id);
+        
+        const response = await bookingApi.getBookings({
+          userId: user.id,
+          pageSize: 100
+        });
 
-      console.log('Bookings tab API response:', response);
-      
-      const bookings = Array.isArray(response) ? response : (response?.data || []);
-      
-      console.log('Parsed bookings for tab:', bookings);
-      console.log('Number of bookings:', bookings.length);
-      
-      setUpcomingBookings(bookings);
+        console.log('Bookings API response:', response);
+        
+        const bookings = Array.isArray(response) ? response : (response?.data || []);
+        
+        // Filter bookings that have EventId (event registrations)
+        const eventBookings = bookings.filter(booking => {
+          const eventId = booking.eventId || booking.EventId;
+          return eventId != null && eventId !== '';
+        });
+        
+        console.log('Event bookings found:', eventBookings.length);
+        
+        // Get unique event IDs
+        const eventIds = [...new Set(eventBookings.map(b => b.eventId || b.EventId))];
+        console.log('Unique event IDs:', eventIds);
+        
+        // Load event details for each event ID
+        const eventsPromises = eventIds.map(async (eventId) => {
+          try {
+            const event = await eventApi.getEventById(eventId);
+            return normalizeEvent(event);
+          } catch (error) {
+            console.error(`Error loading event ${eventId}:`, error);
+            return null;
+          }
+        });
+        
+        const events = (await Promise.all(eventsPromises)).filter(e => e != null);
+        
+        // Sort by start date (upcoming first)
+        events.sort((a, b) => {
+          const dateA = new Date(a.StartDate || a.startDate);
+          const dateB = new Date(b.StartDate || b.startDate);
+          return dateA - dateB;
+        });
+        
+        console.log('Registered events loaded:', events.length);
+        setRegisteredEvents(events);
+      } else {
+        // For lecturers/admins, load bookings
+        console.log('Loading all bookings for user:', user.id);
+        
+        const response = await bookingApi.getBookings({
+          userId: user.id,
+          pageSize: 50
+        });
+
+        console.log('Bookings tab API response:', response);
+        
+        const bookings = Array.isArray(response) ? response : (response?.data || []);
+        
+        console.log('Parsed bookings for tab:', bookings);
+        console.log('Number of bookings:', bookings.length);
+      }
     } catch (error) {
-      console.error('Error loading bookings:', error);
-      setUpcomingBookings([]);
+      console.error('Error loading bookings/registered events:', error);
+      if (userRole === 'Student' || (!isAdmin && !isLecturer)) {
+        setRegisteredEvents([]);
+      }
     } finally {
       setLoadingData(false);
     }
@@ -418,20 +471,7 @@ function Home({ user: userProp }) {
     return statusMap[status] || 'Pending';
   };
 
-  const getStatusBadgeClass = (status) => {
-    // Handle both string and number status
-    const statusLabel = typeof status === 'number' ? getStatusLabel(status) : status;
-    const statusMap = {
-      'Pending': 'status-pending',
-      'Approved': 'status-approved',
-      'Rejected': 'status-rejected',
-      'Cancelled': 'status-cancelled',
-      'Active': 'status-active',
-      'Inactive': 'status-inactive',
-      'Completed': 'status-completed'
-    };
-    return statusMap[statusLabel] || 'status-pending';
-  };
+  // Removed unused getStatusBadgeClass
 
   const formatDate = (dateString) => {
     const date = new Date(dateString);
@@ -480,7 +520,8 @@ function Home({ user: userProp }) {
       StartDate: event.StartDate || event.startDate,
       EndDate: event.EndDate || event.endDate,
       Status: event.Status || event.status,
-      CreatedBy: event.CreatedBy || event.createdBy
+      CreatedBy: event.CreatedBy || event.createdBy,
+      ImageUrl: event.ImageUrl || event.imageUrl
     };
   };
 
@@ -529,11 +570,19 @@ function Home({ user: userProp }) {
     },
     {
       id: 'bookings',
-      label: isLecturer ? 'Approvals' : 'My Bookings',
+      label: isLecturer ? 'Approvals' : 'Registered Events',
       icon: (
         <svg xmlns="http://www.w3.org/2000/svg" width="1.125rem" height="1.125rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
-          <rect width="20" height="14" x="2" y="6" rx="2"></rect>
+          <path d="M8 2v4"></path>
+          <path d="M16 2v4"></path>
+          <rect width="18" height="18" x="3" y="4" rx="2"></rect>
+          <path d="M3 10h18"></path>
+          <path d="M8 14h.01"></path>
+          <path d="M12 14h.01"></path>
+          <path d="M16 14h.01"></path>
+          <path d="M8 18h.01"></path>
+          <path d="M12 18h.01"></path>
+          <path d="M16 18h.01"></path>
         </svg>
       )
     },
@@ -628,13 +677,21 @@ function Home({ user: userProp }) {
         <div className="quick-stat-card">
           <div className="quick-stat-icon blue">
             <svg xmlns="http://www.w3.org/2000/svg" width="2rem" height="2rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
-              <rect width="20" height="14" x="2" y="6" rx="2"></rect>
+              <path d="M8 2v4"></path>
+              <path d="M16 2v4"></path>
+              <rect width="18" height="18" x="3" y="4" rx="2"></rect>
+              <path d="M3 10h18"></path>
+              <path d="M8 14h.01"></path>
+              <path d="M12 14h.01"></path>
+              <path d="M16 14h.01"></path>
+              <path d="M8 18h.01"></path>
+              <path d="M12 18h.01"></path>
+              <path d="M16 18h.01"></path>
             </svg>
           </div>
           <div className="quick-stat-content">
-            <p className="quick-stat-number">{upcomingBookings.length}</p>
-            <p className="quick-stat-label">Upcoming Bookings</p>
+            <p className="quick-stat-number">{registeredEvents.length}</p>
+            <p className="quick-stat-label">Events I've Registered</p>
           </div>
         </div>
 
@@ -682,57 +739,6 @@ function Home({ user: userProp }) {
 
       {/* Main Content Grid */}
       <div className="home-content-grid">
-        {/* Upcoming Bookings Section */}
-        <div className="home-content-card">
-          <div className="home-content-card-header">
-            <div>
-              <h2>Your Upcoming Bookings</h2>
-              <p>Manage your lab reservations</p>
-            </div>
-            <button className="btn-view-all" onClick={() => setActiveTab('bookings')}>
-              View All →
-            </button>
-          </div>
-          <div className="home-content-card-body">
-            {loadingData ? (
-              <div className="home-loading">
-                <p>Loading bookings...</p>
-              </div>
-            ) : upcomingBookings.length === 0 ? (
-              <div className="home-empty">
-                <svg xmlns="http://www.w3.org/2000/svg" width="4rem" height="4rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
-                  <rect width="20" height="14" x="2" y="6" rx="2"></rect>
-                </svg>
-                <h3>No Upcoming Bookings</h3>
-                <p>You don't have any bookings scheduled yet</p>
-                <button className="btn-primary" onClick={() => setActiveTab('labs')}>Book a Lab</button>
-              </div>
-            ) : (
-              <div className="home-booking-list">
-                {upcomingBookings.slice(0, 5).map(booking => (
-                  <div key={booking.id} className="home-booking-item">
-                    <div className="home-booking-info">
-                      <div className="home-booking-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" width="1.5rem" height="1.5rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                        </svg>
-                      </div>
-                      <div>
-                        <h4>{booking.roomName}</h4>
-                        <p>{formatDate(booking.startTime)} • {formatTime(booking.startTime)} - {formatTime(booking.endTime)}</p>
-                      </div>
-                    </div>
-                    <span className={`status-badge ${getStatusBadgeClass(booking.status)}`}>
-                      {getStatusLabel(booking.status)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
         {/* Upcoming Events Section */}
         <div className="home-content-card">
           <div className="home-content-card-header">
@@ -762,11 +768,25 @@ function Home({ user: userProp }) {
               </div>
             ) : (
               <div className="home-event-list">
-                {upcomingEvents.slice(0, 3).map(event => {
+                {upcomingEvents.slice(0, 10).map(event => {
                   const normalized = normalizeEvent(event);
                   return (
                     <div key={normalized.Id} className="home-event-item">
-                    <div className="home-event-info">
+                      <div className="home-event-image">
+                        {normalized.ImageUrl ? (
+                          <img src={normalized.ImageUrl} alt={normalized.Title} />
+                        ) : (
+                          <div className="home-event-image-placeholder">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <rect width="18" height="18" x="3" y="3" rx="2" ry="2"></rect>
+                              <circle cx="9" cy="9" r="2"></circle>
+                              <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path>
+                            </svg>
+                            <span>No Image</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="home-event-info">
                         <h4>{normalized.Title}</h4>
                         <p className="home-event-date">
                           <svg xmlns="http://www.w3.org/2000/svg" width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -787,11 +807,11 @@ function Home({ user: userProp }) {
                         {normalized.Description && (
                           <p className="home-event-description">{normalized.Description.substring(0, 100)}...</p>
                         )}
-                    </div>
+                      </div>
                       <button className="btn-register" onClick={() => setActiveTab('events')}>
                         View Details
                       </button>
-                  </div>
+                    </div>
                   );
                 })}
               </div>
@@ -892,17 +912,102 @@ function Home({ user: userProp }) {
     </div>
   );
 
-  const renderBookings = () => (
-    <div className="home-content">
-      <BookingList
-        userRole={userRole}
-        userId={user?.id}
-        onViewBooking={(bookingId) => {
-          console.log('View booking:', bookingId);
-        }}
-      />
-    </div>
-  );
+  const renderBookings = () => {
+    // For students, show registered events
+    if (userRole === 'Student' || (!isAdmin && !isLecturer)) {
+      return (
+        <div className="home-content">
+          <div className="room-list-container">
+            <div className="room-list-header">
+              <h2>My Registered Events</h2>
+              <p>Events you have registered to attend</p>
+            </div>
+            
+            {loadingData ? (
+              <div className="loading">
+                <div className="loading-spinner"></div>
+                Loading registered events...
+              </div>
+            ) : registeredEvents.length === 0 ? (
+              <div className="home-empty">
+                <svg xmlns="http://www.w3.org/2000/svg" width="4rem" height="4rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M8 2v4"></path>
+                  <path d="M16 2v4"></path>
+                  <rect width="18" height="18" x="3" y="4" rx="2"></rect>
+                  <path d="M3 10h18"></path>
+                </svg>
+                <h3>No Registered Events</h3>
+                <p>You haven't registered for any events yet</p>
+                <button className="btn-primary" onClick={() => setActiveTab('events')}>Browse Events</button>
+              </div>
+            ) : (
+              <div className="home-event-list">
+                {registeredEvents.map(event => {
+                  const normalized = normalizeEvent(event);
+                  return (
+                    <div key={normalized.Id} className="home-event-item">
+                      <div className="home-event-image">
+                        {normalized.ImageUrl ? (
+                          <img src={normalized.ImageUrl} alt={normalized.Title} />
+                        ) : (
+                          <div className="home-event-image-placeholder">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <rect width="18" height="18" x="3" y="3" rx="2" ry="2"></rect>
+                              <circle cx="9" cy="9" r="2"></circle>
+                              <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path>
+                            </svg>
+                            <span>No Image</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="home-event-info">
+                        <h4>{normalized.Title}</h4>
+                        <p className="home-event-date">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12 6 12 12 16 14"></polyline>
+                          </svg>
+                          {formatDate(normalized.StartDate)} • {formatTime(normalized.StartDate)} - {formatTime(normalized.EndDate)}
+                        </p>
+                        {normalized.Location && (
+                          <p className="home-event-location">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                              <circle cx="12" cy="10" r="3"></circle>
+                            </svg>
+                            {normalized.Location}
+                          </p>
+                        )}
+                        {normalized.Description && (
+                          <p className="home-event-description">{normalized.Description.substring(0, 150)}...</p>
+                        )}
+                      </div>
+                      <button className="btn-register" onClick={() => setActiveTab('events')}>
+                        View Details
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+    
+    // For lecturers/admins, show booking list
+    return (
+      <div className="home-content">
+        <BookingList
+          userRole={userRole}
+          userId={user?.id}
+          onViewBooking={(bookingId) => {
+            console.log('View booking:', bookingId);
+          }}
+        />
+      </div>
+    );
+  };
 
   const renderNotifications = () => (
     <div className="home-content">

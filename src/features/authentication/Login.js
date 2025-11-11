@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { login as apiLogin, authApi } from '../../api';
+import fptBackground from '../../assets/images/truong-dai-hoc-fpt-ho-chi-minh.jpeg';
 // styles moved to global.css
 
 function Login({ onLogin, onSwitchToRegister }) {
@@ -60,7 +61,12 @@ function Login({ onLogin, onSwitchToRegister }) {
 
   return (
     <div className="login-page">
-      <div className="login-left">
+      <div className="login-left" style={{
+        backgroundImage: `url(${fptBackground})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat'
+      }}>
         <div className="left-overlay-grid" />
         <div className="left-ornament left-ornament--one" />
         <div className="left-ornament left-ornament--two" />

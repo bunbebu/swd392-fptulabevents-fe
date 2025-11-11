@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { eventApi } from '../../../api';
+import { ensureArray, normalizeSlot, formatDateDisplay, formatTimeDisplay, groupSlotsByRoom } from '../../event-management/admin/eventBookingHelpers';
 
 /**
  * Booking Form Component
@@ -9,7 +10,7 @@ import { eventApi } from '../../../api';
  * @param {boolean} props.isOpen - Whether the modal is open
  * @param {Function} props.onClose - Callback when modal is closed
  * @param {Function} props.onSubmit - Callback when form is submitted
- * @param {Object} props.roomInfo - Room information (id, name)
+ * @param {Object} props.roomInfo - Room information (id, name) [optional when booking by event slot]
  * @param {boolean} props.isSubmitting - Whether the form is being submitted
  */
 const BookingForm = ({ isOpen, onClose, onSubmit, roomInfo, isSubmitting = false }) => {
@@ -24,6 +25,8 @@ const BookingForm = ({ isOpen, onClose, onSubmit, roomInfo, isSubmitting = false
   const [errors, setErrors] = useState({});
   const [events, setEvents] = useState([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
+  const [eventSlots, setEventSlots] = useState([]);
+  const [selectedSlotId, setSelectedSlotId] = useState('');
 
   // Load events when modal opens
   useEffect(() => {
@@ -31,7 +34,7 @@ const BookingForm = ({ isOpen, onClose, onSubmit, roomInfo, isSubmitting = false
       if (isOpen) {
         try {
           setLoadingEvents(true);
-          const eventsData = await eventApi.getEvents();
+          const eventsData = await eventApi.getEvents({ isUpcoming: true });
           const eventsList = Array.isArray(eventsData) ? eventsData : (eventsData?.data || []);
           setEvents(eventsList);
         } catch (err) {
@@ -56,8 +59,35 @@ const BookingForm = ({ isOpen, onClose, onSubmit, roomInfo, isSubmitting = false
         notes: ''
       });
       setErrors({});
+      setEventSlots([]);
+      setSelectedSlotId('');
     }
   }, [isOpen]);
+
+  // Load selected event detail and its slots
+  useEffect(() => {
+    const loadEventDetail = async () => {
+      if (!formData.eventId) {
+        setEventSlots([]);
+        setSelectedSlotId('');
+        return;
+      }
+
+      try {
+        const detail = await eventApi.getEventById(formData.eventId);
+        const slotsRaw = ensureArray(detail?.roomSlots || detail?.RoomSlots);
+        const normalized = slotsRaw.map(normalizeSlot);
+        setEventSlots(normalized);
+      } catch (err) {
+        console.error('Failed to load event detail:', err);
+        setEventSlots([]);
+      }
+    };
+
+    loadEventDetail();
+  }, [formData.eventId]);
+
+  const groupedSlots = useMemo(() => groupSlotsByRoom(eventSlots), [eventSlots]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -77,32 +107,16 @@ const BookingForm = ({ isOpen, onClose, onSubmit, roomInfo, isSubmitting = false
   const validateForm = () => {
     const newErrors = {};
 
-    if (!formData.startTime) {
-      newErrors.startTime = 'Start time is required';
+    if (!formData.eventId) {
+      newErrors.eventId = 'Please select an event';
     }
 
-    if (!formData.endTime) {
-      newErrors.endTime = 'End time is required';
+    if (!selectedSlotId) {
+      newErrors.slot = 'Please select a time slot of the event';
     }
 
     if (!formData.purpose || formData.purpose.trim().length === 0) {
       newErrors.purpose = 'Purpose is required';
-    }
-
-    // Validate that end time is after start time
-    if (formData.startTime && formData.endTime) {
-      const start = new Date(formData.startTime);
-      const end = new Date(formData.endTime);
-      
-      if (end <= start) {
-        newErrors.endTime = 'End time must be after start time';
-      }
-
-      // Validate that start time is not in the past
-      const now = new Date();
-      if (start < now) {
-        newErrors.startTime = 'Start time cannot be in the past';
-      }
     }
 
     setErrors(newErrors);
@@ -116,14 +130,18 @@ const BookingForm = ({ isOpen, onClose, onSubmit, roomInfo, isSubmitting = false
       return;
     }
 
-    // Prepare booking data
+    // Map from selected slot -> start/end times & roomId
+    const slot = eventSlots.find(s => s.id === selectedSlotId);
+    const startTimeIso = slot?.startDateTime ? new Date(slot.startDateTime).toISOString() : undefined;
+    const endTimeIso = slot?.endDateTime ? new Date(slot.endDateTime).toISOString() : undefined;
+
     const bookingData = {
-      roomId: roomInfo.id,
-      startTime: new Date(formData.startTime).toISOString(),
-      endTime: new Date(formData.endTime).toISOString(),
+      roomId: slot?.roomId || roomInfo?.id,
+      startTime: startTimeIso,
+      endTime: endTimeIso,
       purpose: formData.purpose.trim(),
       notes: formData.notes.trim() || undefined,
-      eventId: formData.eventId.trim() || undefined
+      eventId: formData.eventId.trim()
     };
 
     onSubmit(bookingData);
@@ -151,40 +169,83 @@ const BookingForm = ({ isOpen, onClose, onSubmit, roomInfo, isSubmitting = false
 
         <form onSubmit={handleSubmit} className="booking-modal-form">
           <div className="form-group">
-            <label htmlFor="startTime">
-              Start Time <span className="required">*</span>
+            <label htmlFor="eventId">
+              Event <span className="required">*</span>
             </label>
-            <input
-              type="datetime-local"
-              id="startTime"
-              name="startTime"
-              value={formData.startTime}
+            <select
+              id="eventId"
+              name="eventId"
+              value={formData.eventId}
               onChange={handleChange}
-              disabled={isSubmitting}
-              className={errors.startTime ? 'error' : ''}
-            />
-            {errors.startTime && (
-              <span className="error-message">{errors.startTime}</span>
+              disabled={isSubmitting || loadingEvents}
+              className={errors.eventId ? 'error' : ''}
+            >
+              <option value="">
+                {loadingEvents ? 'Loading events...' : 'Select an upcoming event'}
+              </option>
+              {events.map(event => (
+                <option key={event.id || event.Id} value={event.id || event.Id}>
+                  {event.title || event.Title}
+                </option>
+              ))}
+            </select>
+            {errors.eventId && (
+              <span className="error-message">{errors.eventId}</span>
             )}
           </div>
 
-          <div className="form-group">
-            <label htmlFor="endTime">
-              End Time <span className="required">*</span>
-            </label>
-            <input
-              type="datetime-local"
-              id="endTime"
-              name="endTime"
-              value={formData.endTime}
-              onChange={handleChange}
-              disabled={isSubmitting}
-              className={errors.endTime ? 'error' : ''}
-            />
-            {errors.endTime && (
-              <span className="error-message">{errors.endTime}</span>
-            )}
-          </div>
+          {/* Slots of selected event */}
+          {formData.eventId && (
+            <div className="form-group full-width">
+              <label>Available Slots</label>
+              {eventSlots.length === 0 ? (
+                <div className="slot-container info">This event has no available slots.</div>
+              ) : (
+                <div className="slot-group-list">
+                  {groupedSlots.map(group => (
+                    <div key={group.roomId || 'room'} className="slot-group-card">
+                      <div className="slot-group-header">
+                        <span>{group.roomName || 'Room'}</span>
+                      </div>
+                      <div className="slot-group-body">
+                        <div className="slot-grid">
+                          {group.slots.map(slot => {
+                            const isSelected = selectedSlotId === slot.id;
+                            const classNames = ['slot-card'];
+                            if (isSelected) classNames.push('selected');
+                            return (
+                              <button
+                                key={slot.id}
+                                type="button"
+                                className={classNames.join(' ')}
+                                onClick={() => {
+                                  setSelectedSlotId(slot.id);
+                                  // Autofill read-only times to show preview
+                                  setFormData(prev => ({
+                                    ...prev,
+                                    startTime: slot.startDateTime ? new Date(slot.startDateTime).toISOString() : '',
+                                    endTime: slot.endDateTime ? new Date(slot.endDateTime).toISOString() : ''
+                                  }));
+                                  if (errors.slot) setErrors(prev => ({ ...prev, slot: null }));
+                                }}
+                                disabled={isSubmitting}
+                              >
+                                <span className="slot-time">{slot.timeRange || `${formatTimeDisplay(slot.startDateTime)} - ${formatTimeDisplay(slot.endDateTime)}`}</span>
+                                <span className="slot-date">{slot.dateFormatted || formatDateDisplay(slot.startDateTime)}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {errors.slot && (
+                <span className="error-message">{errors.slot}</span>
+              )}
+            </div>
+          )}
 
           <div className="form-group">
             <label htmlFor="purpose">
@@ -205,27 +266,7 @@ const BookingForm = ({ isOpen, onClose, onSubmit, roomInfo, isSubmitting = false
             )}
           </div>
 
-          <div className="form-group">
-            <label htmlFor="eventId">
-              Event (Optional)
-            </label>
-            <select
-              id="eventId"
-              name="eventId"
-              value={formData.eventId}
-              onChange={handleChange}
-              disabled={isSubmitting || loadingEvents}
-            >
-              <option value="">
-                {loadingEvents ? 'Loading events...' : 'No event (regular booking)'}
-              </option>
-              {events.map(event => (
-                <option key={event.id || event.Id} value={event.id || event.Id}>
-                  {event.title || event.Title}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Purpose & Notes */}
 
           <div className="form-group">
             <label htmlFor="notes">

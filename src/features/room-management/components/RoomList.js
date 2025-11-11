@@ -176,7 +176,7 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
         (availableCount?.availableCount || availableCount?.AvailableCount || 0);
 
       // Determine if any filters (besides pagination) are applied
-      const hasNonPagingFilters = !!(filters.name || filters.location || filters.status !== '' || filters.minCapacity || filters.maxCapacity);
+      const hasNonPagingFilters = !!(filters.name || filters.status !== '' || filters.minCapacity || filters.maxCapacity);
 
       // Prefer backend total count when no non-paging filters are applied
       const derivedTotalCount = (!hasNonPagingFilters && normalizedTotalCount) ? normalizedTotalCount : totalCountFromApi;
@@ -315,7 +315,6 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
     setApiFilters(prev => ({
       ...prev,
       name: localFilters.searchTerm,
-      location: localFilters.searchTerm,
       status: localFilters.status,
       minCapacity: localFilters.minCapacity,
       maxCapacity: localFilters.maxCapacity
@@ -334,7 +333,6 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
     });
     setApiFilters({
       name: '',
-      location: '',
       status: '',
       minCapacity: '',
       maxCapacity: '',
@@ -479,7 +477,7 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                 </svg>
                 <input
                   type="text"
-                  placeholder="Search by name or location..."
+                  placeholder="Search by name..."
                   value={localFilters.searchTerm}
                   onChange={(e) => {
                     const value = e.target.value;
@@ -559,7 +557,6 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                 <tr>
                   <th>ID</th>
                   <th className="col-name">Name</th>
-                  <th className="col-location">Location</th>
                   <th>Capacity</th>
                   <th>Status</th>
                   <th>Equipment Count</th>
@@ -570,7 +567,7 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
               <tbody>
                 {loading && !paginationLoading ? (
                   <tr>
-                    <td colSpan={isAdmin ? "8" : "7"} className="loading-cell">
+                    <td colSpan={isAdmin ? "7" : "6"} className="loading-cell">
                       <div className="loading-spinner"></div>
                       Loading rooms...
                     </td>
@@ -585,13 +582,12 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                       <td><div className="skeleton-text"></div></td>
                       <td><div className="skeleton-text"></div></td>
                       <td><div className="skeleton-text"></div></td>
-                      <td><div className="skeleton-text"></div></td>
                       {isAdmin && <td><div className="skeleton-text"></div></td>}
                     </tr>
                   ))
                 ) : rooms.length === 0 ? (
                   <tr>
-                    <td colSpan={isAdmin ? "8" : "7"} className="no-data">
+                    <td colSpan={isAdmin ? "7" : "6"} className="no-data">
                       No room data
                     </td>
                   </tr>
@@ -611,12 +607,8 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                       <td className="col-name">
                         <div>
                           <strong>{room.name}</strong>
-                          {room.description && (
-                            <div className="text-muted small">{room.description}</div>
-                          )}
                         </div>
                       </td>
-                      <td className="col-location">{room.location}</td>
                       <td>{room.capacity}</td>
                       <td>
                         <span className={getStatusBadgeClass(room.status)}>

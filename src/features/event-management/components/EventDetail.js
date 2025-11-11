@@ -188,6 +188,18 @@ const EventDetail = ({ eventId, onNavigateBack }) => {
               <span className="detail-value">{formatDate(event.endDate)}</span>
             </div>
             <div className="detail-item">
+              <label>Capacity:</label>
+              <span className="detail-value">{typeof event.capacity === 'number' ? `${event.capacity} people` : 'N/A'}</span>
+            </div>
+            <div className="detail-item">
+              <label>Lab:</label>
+              <span className="detail-value">{event.labName || 'N/A'}</span>
+            </div>
+            <div className="detail-item">
+              <label>Room:</label>
+              <span className="detail-value">{event.roomName || 'N/A'}</span>
+            </div>
+            <div className="detail-item">
               <label>Created By:</label>
               <span className="detail-value">{event.createdBy || 'N/A'}</span>
             </div>
@@ -225,6 +237,34 @@ const EventDetail = ({ eventId, onNavigateBack }) => {
             )}
           </div>
         </div>
+
+        {event.imageUrl && (
+          <div className="detail-card">
+            <div className="detail-card-header">
+              <h3>Event Cover Image</h3>
+            </div>
+            <div className="room-image-container">
+              <img src={event.imageUrl} alt={event.title} className="room-image" />
+            </div>
+          </div>
+        )}
+
+        {event.roomSlots && event.roomSlots.length > 0 && (
+          <div className="detail-card">
+            <div className="detail-card-header">
+              <h3>Reserved Room Slots ({event.roomSlots.length})</h3>
+            </div>
+            <div className="slot-summary-list">
+              {event.roomSlots.map((slot) => (
+                <div key={slot.id} className="slot-summary-item">
+                  <span className="slot-date">{slot.dateFormatted || formatDate(slot.date)}</span>
+                  <span className="slot-time">{slot.timeRange}</span>
+                  <span className="slot-room">{slot.roomName || event.roomName || 'Room'}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Bookings List */}
         {event.bookings && event.bookings.length > 0 && (
