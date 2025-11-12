@@ -1540,16 +1540,15 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
                                 </button>
                               ) : (
                                 (() => {
-                                  // Check if event has room slots (if available in list)
-                                  const eventRoomSlots = event.roomSlots || event.RoomSlots || [];
-                                  const hasRoomSlots = eventRoomSlots.length > 0;
-                                  const isDisabled = registeringEventId === event.id || actionLoading || !hasRoomSlots;
+                                  // Don't check roomSlots in list view - backend doesn't include it in list API
+                                  // Validation will happen when user clicks Register button (event details API includes roomSlots)
+                                  const isDisabled = registeringEventId === event.id || actionLoading;
                                   
                                   return (
                                     <button
                                       className="btn btn-sm"
                                       style={{ 
-                                        background: isDisabled && !hasRoomSlots ? '#9ca3af' : '#3b82f6', 
+                                        background: '#3b82f6', 
                                         color: 'white',
                                         border: 'none',
                                         padding: '0 12px',
@@ -1567,11 +1566,7 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
                                       }}
                                       onClick={() => handleRegisterEvent(event)}
                                       disabled={isDisabled}
-                                      title={
-                                        !hasRoomSlots 
-                                          ? 'This event is not properly configured. It does not have any room slots assigned. Please contact the administrator.'
-                                          : 'Register for event'
-                                      }
+                                      title='Register for event'
                                     >
                                   {registeringEventId === event.id ? (
                                     <>

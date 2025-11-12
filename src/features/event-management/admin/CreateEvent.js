@@ -506,27 +506,6 @@ const CreateEvent = ({ onNavigateBack, onSuccess }) => {
       newErrors.title = 'Event title is required';
     }
 
-    if (!formData.startDate) {
-      newErrors.startDate = 'Start date is required';
-    }
-
-    if (!formData.endDate) {
-      newErrors.endDate = 'End date is required';
-    }
-
-    // Validate end date is after start date
-    if (formData.startDate && formData.endDate) {
-      const start = new Date(formData.startDate);
-      const end = new Date(formData.endDate);
-      if (end <= start) {
-        newErrors.endDate = 'End date must be after start date';
-      }
-    }
-
-    if (!formData.capacity || formData.capacity < 1) {
-      newErrors.capacity = 'Capacity must be at least 1';
-    }
-
     if (!selectedLabId) {
       newErrors.labId = 'Please select a lab';
     }
@@ -765,73 +744,6 @@ const CreateEvent = ({ onNavigateBack, onSuccess }) => {
                   placeholder="E.g.: Lab A101, Building A"
                   disabled={loading}
                 />
-              </div>
-
-              {/* Start Date */}
-              <div className="form-group">
-                <label htmlFor="startDate">
-                  Start Date <span className="required">*</span>
-                </label>
-                <input
-                  type="datetime-local"
-                  id="startDate"
-                  name="startDate"
-                  value={formData.startDate}
-                  onChange={handleChange}
-                  className={errors.startDate ? 'error' : ''}
-                  disabled={loading}
-                />
-                {errors.startDate && <span className="error-message">{errors.startDate}</span>}
-              </div>
-
-              {/* End Date */}
-              <div className="form-group">
-                <label htmlFor="endDate">
-                  End Date <span className="required">*</span>
-                </label>
-                <input
-                  type="datetime-local"
-                  id="endDate"
-                  name="endDate"
-                  value={formData.endDate}
-                  onChange={handleChange}
-                  className={errors.endDate ? 'error' : ''}
-                  disabled={loading}
-                />
-                {errors.endDate && <span className="error-message">{errors.endDate}</span>}
-              </div>
-
-              {/* Visibility */}
-              <div className="form-group">
-                <label className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    name="visibility"
-                    checked={formData.visibility}
-                    onChange={handleChange}
-                    disabled={loading}
-                  />
-                  <span>Public Event (visible to all users)</span>
-                </label>
-              </div>
-
-              {/* Capacity */}
-              <div className="form-group">
-                <label htmlFor="capacity">
-                  Capacity <span className="required">*</span>
-                </label>
-                <input
-                  type="number"
-                  id="capacity"
-                  name="capacity"
-                  value={formData.capacity}
-                  onChange={handleChange}
-                  className={errors.capacity ? 'error' : ''}
-                  placeholder="E.g.: 100"
-                  min="1"
-                  disabled={loading}
-                />
-                {errors.capacity && <span className="error-message">{errors.capacity}</span>}
               </div>
 
               {/* Booking Mode */}
