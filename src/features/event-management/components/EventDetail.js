@@ -305,6 +305,17 @@ const EventDetail = ({ eventId, onNavigateBack, onEditEvent, userRole = 'Student
 
       <div className="page-content">
         <div className="room-detail-content">
+        {event.imageUrl && (
+          <div className="detail-card">
+            <div className="detail-card-header">
+              <h3>Event Cover Image</h3>
+            </div>
+            <div className="room-image-container">
+              <img src={event.imageUrl} alt={event.title} className="room-image" />
+            </div>
+          </div>
+        )}
+
         <div className="detail-card">
           <div className="detail-card-header">
             <h3>Basic Information</h3>
@@ -379,17 +390,6 @@ const EventDetail = ({ eventId, onNavigateBack, onEditEvent, userRole = 'Student
             )}
           </div>
         </div>
-
-        {event.imageUrl && (
-          <div className="detail-card">
-            <div className="detail-card-header">
-              <h3>Event Cover Image</h3>
-            </div>
-            <div className="room-image-container">
-              <img src={event.imageUrl} alt={event.title} className="room-image" />
-            </div>
-          </div>
-        )}
 
         {event.roomSlots && event.roomSlots.length > 0 && (
           <div className="detail-card">

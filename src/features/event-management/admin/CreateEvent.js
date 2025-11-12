@@ -99,7 +99,10 @@ const CreateEvent = ({ onNavigateBack, onSuccess }) => {
 
   const isSlotBooked = (slot) => Boolean(slot?.eventId);
 
-  const canSelectSlot = (slot) => !isSlotBooked(slot);
+  const canSelectSlot = (slot) => {
+    // Only check if slot is booked, allow selecting from multiple rooms
+    return !isSlotBooked(slot);
+  };
 
   // Image upload states
   const [selectedFile, setSelectedFile] = useState(null);
@@ -586,6 +589,8 @@ const CreateEvent = ({ onNavigateBack, onSuccess }) => {
       let effectiveStart = parsedStart;
       let effectiveEnd = parsedEnd;
       let roomSlotIdsPayload = null;
+      let slotsByRoom = [];
+      let roomsCount = 0;
 
       if (bookingMode === BOOKING_MODES.ROOM || bookingMode === BOOKING_MODES.LAB) {
         const selectedSlots = slots
@@ -599,7 +604,23 @@ const CreateEvent = ({ onNavigateBack, onSuccess }) => {
         if (selectedSlots.length > 0) {
           effectiveStart = selectedSlots[0].startDateTime || effectiveStart;
           effectiveEnd = selectedSlots[selectedSlots.length - 1].endDateTime || effectiveEnd;
+          
+          // For Book Entire Lab or Book Specific Room: use all selected slots
+          // Backend supports multiple rooms as long as they belong to the same Lab (when roomId is null)
           roomSlotIdsPayload = selectedSlots.map((slot) => slot.id);
+          
+          // Group slots by roomId for logging purposes
+          const grouped = {};
+          selectedSlots.forEach(slot => {
+            const roomId = slot.roomId || 'unknown';
+            if (!grouped[roomId]) {
+              grouped[roomId] = [];
+            }
+            grouped[roomId].push(slot);
+          });
+          
+          slotsByRoom = Object.values(grouped);
+          roomsCount = slotsByRoom.length;
         }
       }
 
@@ -620,8 +641,23 @@ const CreateEvent = ({ onNavigateBack, onSuccess }) => {
       };
 
       console.log('Submitting event creation:', submitData);
+      console.log('Slots grouped by room:', slotsByRoom?.map(group => ({
+        roomId: group[0]?.roomId,
+        roomName: group[0]?.roomName,
+        slotCount: group.length
+      })));
 
+      // Create event with all selected slots
+      // Backend supports Book Entire Lab with multiple rooms (roomId=null, slots from multiple rooms in same Lab)
       await eventApi.createEvent(submitData);
+      
+      console.log('✅ Event created successfully with', roomSlotIdsPayload?.length || 0, 'slots');
+      if (roomsCount > 1) {
+        console.log(`   Event spans ${roomsCount} rooms:`, slotsByRoom?.map(group => ({
+          roomName: group[0]?.roomName,
+          slotCount: group.length
+        })));
+      }
 
       // Cleanup preview URL
       if (previewUrl) {
@@ -943,15 +979,43 @@ const CreateEvent = ({ onNavigateBack, onSuccess }) => {
                     roomsLoading ? (
                       <div className="loading-inline">Loading rooms...</div>
                     ) : rooms.length > 0 ? (
-                      <div className="form-group full-width info" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <p>This event will reserve the entire lab. All rooms below will be held for the selected slots.</p>
-                        <div className="lab-room-list">
-                          {rooms.map((room) => (
-                            <span key={room.id} className="lab-room-chip">
-                              {room.name}
-                              <span style={{ fontSize: '11px', color: '#1e40af' }}>• {room.capacity} seats</span>
-                            </span>
-                          ))}
+                      <div className="form-group full-width">
+                        <div className="info" style={{ 
+                          display: 'flex', 
+                          flexDirection: 'column', 
+                          gap: '8px',
+                          padding: '12px',
+                          backgroundColor: '#eff6ff',
+                          borderRadius: '8px',
+                          border: '1px solid #bfdbfe',
+                          marginBottom: '12px'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginTop: '2px', flexShrink: 0 }}>
+                              <circle cx="12" cy="12" r="10"></circle>
+                              <line x1="12" y1="16" x2="12" y2="12"></line>
+                              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                            </svg>
+                            <div style={{ flex: 1 }}>
+                              <p style={{ margin: 0, fontWeight: '600', color: '#1e40af', fontSize: '14px' }}>
+                                You can select slots from multiple rooms in this lab.
+                              </p>
+                              <p style={{ margin: '4px 0 0 0', color: '#1e40af', fontSize: '13px' }}>
+                                Select time slots from any room below. All selected slots will be included in your event.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="info" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <p>Available rooms in this lab:</p>
+                          <div className="lab-room-list">
+                            {rooms.map((room) => (
+                              <span key={room.id} className="lab-room-chip">
+                                {room.name}
+                                <span style={{ fontSize: '11px', color: '#1e40af' }}>• {room.capacity} seats</span>
+                              </span>
+                            ))}
+                          </div>
                         </div>
                       </div>
                     ) : (
@@ -999,6 +1063,8 @@ const CreateEvent = ({ onNavigateBack, onSuccess }) => {
                                 {group.slots.map((slot) => {
                                   const isSelected = selectedSlotIds.has(slot.id);
                                   const booked = isSlotBooked(slot);
+                                  const canSelect = canSelectSlot(slot);
+                                  const isDisabled = loading || booked || !canSelect;
                                   const classNames = ['slot-card'];
                                   if (isSelected) classNames.push('selected');
                                   if (booked) classNames.push('booked');
@@ -1009,7 +1075,8 @@ const CreateEvent = ({ onNavigateBack, onSuccess }) => {
                                       type="button"
                                       className={classNames.join(' ')}
                                       onClick={() => handleToggleSlot(slot.id)}
-                                      disabled={loading || booked}
+                                      disabled={isDisabled}
+                                      title={booked ? 'This slot is already booked' : undefined}
                                     >
                                       <span className="slot-time">{slot.timeRange || `${formatTimeDisplay(slot.startDateTime)} - ${formatTimeDisplay(slot.endDateTime)}`}</span>
                                       <span className="slot-date">{slot.dateFormatted || formatDateDisplay(slot.startDateTime)}</span>

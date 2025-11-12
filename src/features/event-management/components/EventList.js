@@ -119,6 +119,8 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
   const [registeredEventIds, setRegisteredEventIds] = useState(new Set());
   const [registeringEventId, setRegisteringEventId] = useState(null);
   const [confirmRegisterEvent, setConfirmRegisterEvent] = useState(null);
+  const [selectedRoomForRegistration, setSelectedRoomForRegistration] = useState(null);
+  const [availableRoomsForEvent, setAvailableRoomsForEvent] = useState([]);
   // Approval modal for event registrations
   const [approvalEvent, setApprovalEvent] = useState(null);
   const [pendingBookings, setPendingBookings] = useState([]);
@@ -202,6 +204,28 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
     } finally {
       setLoadingApprovals(false);
     }
+  };
+
+  // Group bookings by room
+  const groupBookingsByRoom = (bookings) => {
+    const grouped = {};
+    bookings.forEach(booking => {
+      const roomId = booking.roomId || booking.RoomId || 'unknown';
+      const roomName = booking.roomName || booking.RoomName || 
+                      (booking.room && (booking.room.name || booking.room.Name)) ||
+                      (booking.Room && (booking.Room.name || booking.Room.Name)) ||
+                      `Room ${roomId.substring(0, 8)}`;
+      
+      if (!grouped[roomId]) {
+        grouped[roomId] = {
+          roomId,
+          roomName,
+          bookings: []
+        };
+      }
+      grouped[roomId].bookings.push(booking);
+    });
+    return Object.values(grouped);
   };
 
   const handleApproveRejectBooking = async (booking, action) => {
@@ -483,7 +507,7 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
       
       // Sort by newest first (prefer createdAt if available, fallback to startDate)
       // This ensures newest events appear first for all roles (admin, lecturer, student)
-      normalizedEvents.sort((a, b) => {
+      const sortByNewest = (a, b) => {
         // Try to get createdAt from various possible field names
         const aCreatedAt = a.createdAt || a.CreatedAt || a.created_at || a.Created_At || 
                           (a.originalEvent && (a.originalEvent.createdAt || a.originalEvent.CreatedAt));
@@ -510,10 +534,15 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
         
         // Sort descending (newest first)
         return bDate - aDate;
-      });
+      };
+      
+      // Sort events by newest first
+      normalizedEvents.sort(sortByNewest);
       
       if (isLecturer) {
         normalizedEvents = filterLecturerEvents(normalizedEvents, apiFilters);
+        // Re-sort after filtering to ensure newest first order is maintained
+        normalizedEvents.sort(sortByNewest);
       }
 
       // For Lecturer: client-side pagination (slice events)
@@ -656,7 +685,7 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
   }, [confirmRegisterEvent]);
 
   // Register for event
-  const handleRegisterEvent = (event) => {
+  const handleRegisterEvent = async (event) => {
     console.log('handleRegisterEvent called with event:', event);
     
     if (!isStudent) {
@@ -699,20 +728,61 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
       return;
     }
     
-    // Note: We don't check room slots here because event list items may not include this info
-    // We'll check it in handleConfirmedRegister after fetching event details
-    
-    // Show confirm modal
-    console.log('Setting confirmRegisterEvent to:', event);
-    setConfirmRegisterEvent(event);
+    // Get event details to check for multiple rooms
+    try {
+      const eventDetails = await eventApi.getEventById(event.id);
+      const roomSlots = eventDetails.roomSlots || eventDetails.RoomSlots || [];
+      
+      // Extract unique rooms from roomSlots
+      const roomsMap = new Map();
+      roomSlots.forEach(slot => {
+        const roomId = slot.roomId || slot.RoomId || 
+                      (slot.room && (slot.room.id || slot.room.Id)) ||
+                      (slot.Room && (slot.Room.id || slot.Room.Id));
+        const roomName = slot.roomName || slot.RoomName ||
+                        (slot.room && (slot.room.name || slot.room.Name)) ||
+                        (slot.Room && (slot.Room.name || slot.Room.Name));
+        
+        if (roomId && !roomsMap.has(roomId)) {
+          roomsMap.set(roomId, {
+            id: roomId,
+            name: roomName || `Room ${roomId.substring(0, 8)}`,
+            capacity: slot.room?.capacity || slot.Room?.capacity || slot.capacity || null
+          });
+        }
+      });
+      
+      const uniqueRooms = Array.from(roomsMap.values());
+      
+      // If multiple rooms, set available rooms and show selection in modal
+      if (uniqueRooms.length > 1) {
+        setAvailableRoomsForEvent(uniqueRooms);
+        setSelectedRoomForRegistration(uniqueRooms[0]); // Default to first room
+      } else {
+        setAvailableRoomsForEvent([]);
+        setSelectedRoomForRegistration(null);
+      }
+      
+      // Show confirm modal
+      console.log('Setting confirmRegisterEvent to:', event);
+      setConfirmRegisterEvent(event);
+    } catch (error) {
+      console.error('Error loading event details:', error);
+      showToast('Failed to load event details. Please try again.', 'error');
+    }
   };
 
   // Handle confirmed registration
   const handleConfirmedRegister = async () => {
     if (!confirmRegisterEvent) return;
     
+    // Check if room selection is required and not selected
+    if (availableRoomsForEvent.length > 1 && !selectedRoomForRegistration) {
+      showToast('Please select a room to register', 'error');
+      return;
+    }
+    
     const event = confirmRegisterEvent;
-    setConfirmRegisterEvent(null);
     setRegisteringEventId(event.id);
     
     try {
@@ -722,25 +792,33 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
       console.log('Event details for registration:', eventDetails);
       console.log('Event details roomSlots:', eventDetails.roomSlots || eventDetails.RoomSlots);
       
-      // Get roomId from event (try multiple sources)
-      let roomId = eventDetails.roomId || eventDetails.RoomId;
+      // Get roomId - use selected room if available, otherwise try to get from event
+      let roomId = null;
       
-      // If not found, try to get from roomSlots
-      if (!roomId && eventDetails.roomSlots && eventDetails.roomSlots.length > 0) {
-        const firstSlot = eventDetails.roomSlots[0];
-        console.log('First slot from roomSlots:', firstSlot);
-        roomId = firstSlot.roomId || firstSlot.RoomId || 
-                 (firstSlot.room && (firstSlot.room.id || firstSlot.room.Id)) ||
-                 (firstSlot.Room && (firstSlot.Room.id || firstSlot.Room.Id));
-      }
-      
-      // Also try RoomSlots (capital R)
-      if (!roomId && eventDetails.RoomSlots && eventDetails.RoomSlots.length > 0) {
-        const firstSlot = eventDetails.RoomSlots[0];
-        console.log('First slot from RoomSlots:', firstSlot);
-        roomId = firstSlot.roomId || firstSlot.RoomId || 
-                 (firstSlot.room && (firstSlot.room.id || firstSlot.room.Id)) ||
-                 (firstSlot.Room && (firstSlot.Room.id || firstSlot.Room.Id));
+      // If user selected a room, use it
+      if (selectedRoomForRegistration) {
+        roomId = selectedRoomForRegistration.id || selectedRoomForRegistration.Id;
+      } else {
+        // Fallback: try to get from event (for single room events)
+        roomId = eventDetails.roomId || eventDetails.RoomId;
+        
+        // If not found, try to get from roomSlots
+        if (!roomId && eventDetails.roomSlots && eventDetails.roomSlots.length > 0) {
+          const firstSlot = eventDetails.roomSlots[0];
+          console.log('First slot from roomSlots:', firstSlot);
+          roomId = firstSlot.roomId || firstSlot.RoomId || 
+                   (firstSlot.room && (firstSlot.room.id || firstSlot.room.Id)) ||
+                   (firstSlot.Room && (firstSlot.Room.id || firstSlot.Room.Id));
+        }
+        
+        // Also try RoomSlots (capital R)
+        if (!roomId && eventDetails.RoomSlots && eventDetails.RoomSlots.length > 0) {
+          const firstSlot = eventDetails.RoomSlots[0];
+          console.log('First slot from RoomSlots:', firstSlot);
+          roomId = firstSlot.roomId || firstSlot.RoomId || 
+                   (firstSlot.room && (firstSlot.room.id || firstSlot.room.Id)) ||
+                   (firstSlot.Room && (firstSlot.Room.id || firstSlot.Room.Id));
+        }
       }
       
       console.log('Extracted roomId:', roomId);
@@ -752,14 +830,15 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
         console.log('Event has no room slots, showing error message and returning early');
         // Show a more user-friendly error message
         showToast('This event is not properly configured. It does not have any room slots assigned. Please contact the administrator to set up the event properly before registering.', 'error');
+        setConfirmRegisterEvent(null);
+        setSelectedRoomForRegistration(null);
+        setAvailableRoomsForEvent([]);
         return; // Return early instead of throwing to avoid showing error toast twice
       }
       
       console.log('Event has room slots, proceeding with booking creation');
       
       // Create booking for event
-      // Backend will automatically get roomId from event's RoomSlots, so we don't need to send it
-      // But we can include it if we found it (optional)
       const bookingPayload = {
         eventId: event.id,
         startTime: event.startDate || event.StartDate,
@@ -768,7 +847,7 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
         notes: `Registered for event: ${event.title}`
       };
       
-      // Only include roomId if we found it (optional, backend will get it from event's RoomSlots)
+      // Include roomId if we have it
       if (roomId) {
         bookingPayload.roomId = roomId;
       }
@@ -787,6 +866,11 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
             : e
         )
       );
+      
+      // Reset registration state
+      setConfirmRegisterEvent(null);
+      setSelectedRoomForRegistration(null);
+      setAvailableRoomsForEvent([]);
       
       showToast('Successfully registered for event!', 'success');
     } catch (error) {
@@ -1764,8 +1848,12 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
 
       {/* Confirm Register Event Modal */}
       {confirmRegisterEvent && (
-        <div className="modal-overlay" onClick={() => setConfirmRegisterEvent(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-overlay" onClick={() => {
+          setConfirmRegisterEvent(null);
+          setSelectedRoomForRegistration(null);
+          setAvailableRoomsForEvent([]);
+        }}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
             <div className="modal-header">
               <h3>Confirm Event Registration</h3>
             </div>
@@ -1806,6 +1894,91 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
                   </div>
                 </div>
               </div>
+              
+              {/* Room Selection - Show if multiple rooms available */}
+              {availableRoomsForEvent.length > 1 && (
+                <div style={{ marginTop: '16px', marginBottom: '16px' }}>
+                  <label style={{ 
+                    display: 'block', 
+                    fontSize: '14px', 
+                    fontWeight: '600', 
+                    color: '#374151',
+                    marginBottom: '8px'
+                  }}>
+                    Select Room <span style={{ color: '#dc2626' }}>*</span>
+                  </label>
+                  <div style={{
+                    border: '1px solid #d1d5db',
+                    borderRadius: '8px',
+                    overflow: 'hidden',
+                    backgroundColor: '#fff'
+                  }}>
+                    {availableRoomsForEvent.map((room) => {
+                      const isSelected = selectedRoomForRegistration?.id === room.id;
+                      return (
+                        <div
+                          key={room.id}
+                          onClick={() => setSelectedRoomForRegistration(room)}
+                          style={{
+                            padding: '12px 16px',
+                            cursor: 'pointer',
+                            backgroundColor: isSelected ? '#eff6ff' : '#fff',
+                            borderBottom: room.id !== availableRoomsForEvent[availableRoomsForEvent.length - 1].id ? '1px solid #e5e7eb' : 'none',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px',
+                            transition: 'background-color 0.2s'
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!isSelected) {
+                              e.currentTarget.style.backgroundColor = '#f9fafb';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!isSelected) {
+                              e.currentTarget.style.backgroundColor = '#fff';
+                            }
+                          }}
+                        >
+                          <div style={{
+                            width: '20px',
+                            height: '20px',
+                            borderRadius: '50%',
+                            border: `2px solid ${isSelected ? '#3b82f6' : '#d1d5db'}`,
+                            backgroundColor: isSelected ? '#3b82f6' : 'transparent',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0
+                          }}>
+                            {isSelected && (
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="20 6 9 17 4 12"></polyline>
+                              </svg>
+                            )}
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ 
+                              fontSize: '14px', 
+                              fontWeight: isSelected ? '600' : '500',
+                              color: '#111827',
+                              marginBottom: '2px'
+                            }}>
+                              {room.name}
+                            </div>
+                            {room.capacity && (
+                              <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                                Capacity: {room.capacity} seats
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              
               <p style={{ fontSize: '14px', color: '#6b7280', margin: 0 }}>
                 You will receive a confirmation once your registration is approved.
               </p>
@@ -1813,7 +1986,11 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
             <div className="modal-footer">
               <button
                 className="btn btn-secondary"
-                onClick={() => setConfirmRegisterEvent(null)}
+                onClick={() => {
+                  setConfirmRegisterEvent(null);
+                  setSelectedRoomForRegistration(null);
+                  setAvailableRoomsForEvent([]);
+                }}
                 disabled={registeringEventId === confirmRegisterEvent.id}
               >
                 Cancel
@@ -1821,7 +1998,7 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
               <button
                 className="btn btn-primary"
                 onClick={handleConfirmedRegister}
-                disabled={registeringEventId === confirmRegisterEvent.id}
+                disabled={registeringEventId === confirmRegisterEvent.id || (availableRoomsForEvent.length > 1 && !selectedRoomForRegistration)}
               >
                 {registeringEventId === confirmRegisterEvent.id ? (
                   <>
@@ -1842,12 +2019,12 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
           <div
             className="modal"
             onClick={(e) => e.stopPropagation()}
-            style={{ width: '880px', maxWidth: '92vw' }}
+            style={{ width: '880px', maxWidth: '92vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}
           >
             <div className="modal-header">
               <h3>Pending Registrations - {approvalEvent.title}</h3>
             </div>
-            <div className="modal-body">
+            <div className="modal-body" style={{ flex: 1, overflowY: 'auto' }}>
               {loadingApprovals ? (
                 <div className="loading" style={{ padding: '20px', textAlign: 'center' }}>
                   <div className="loading-spinner"></div>
@@ -1855,58 +2032,115 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
                 </div>
               ) : pendingBookings.length === 0 ? (
                 <div className="no-data" style={{ color: '#64748b' }}>No pending registrations</div>
-              ) : (
-                <table className="room-table">
-                  <thead>
-                    <tr>
-                      <th>Student</th>
-                      <th>Start</th>
-                      <th>End</th>
-                      <th>Status</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pendingBookings.map(b => {
-                      const id = b.id || b.Id;
-                      const userName = b.userName || b.UserName || 'Student';
-                      const start = b.startTime || b.StartTime;
-                      const end = b.endTime || b.EndTime;
-                      return (
-                        <tr key={id}>
-                          <td>{userName}</td>
-                          <td>{start ? new Date(start).toLocaleString() : 'N/A'}</td>
-                          <td>{end ? new Date(end).toLocaleString() : 'N/A'}</td>
-                          <td><span className="status-badge status-pending" style={{ fontSize: '0.625rem' }}>Pending</span></td>
-                          <td>
-                            <div className="action-buttons">
-                              <button
-                                className="btn btn-sm btn-icon btn-icon-outline color-green"
-                                onClick={() => handleApproveRejectBooking(b, 'approve')}
-                                title="Approve"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <polyline points="20 6 9 17 4 12"></polyline>
-                                </svg>
-                              </button>
-                              <button
-                                className="btn btn-sm btn-icon btn-icon-outline color-red"
-                                onClick={() => handleApproveRejectBooking(b, 'reject')}
-                                title="Reject"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <line x1="18" y1="6" x2="6" y2="18"></line>
-                                  <line x1="6" y1="6" x2="18" y2="18"></line>
-                                </svg>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
+              ) : (() => {
+                const groupedByRoom = groupBookingsByRoom(pendingBookings);
+                const hasMultipleRooms = groupedByRoom.length > 1;
+                
+                return (
+                  <div>
+                    {hasMultipleRooms && (
+                      <div style={{ 
+                        marginBottom: '16px', 
+                        padding: '12px', 
+                        backgroundColor: '#eff6ff', 
+                        borderRadius: '8px',
+                        border: '1px solid #bfdbfe'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                          </svg>
+                          <strong style={{ color: '#1e40af', fontSize: '14px' }}>
+                            This event has {groupedByRoom.length} rooms. Registrations are grouped by room.
+                          </strong>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {groupedByRoom.map((roomGroup, roomIndex) => (
+                      <div key={roomGroup.roomId} style={{ marginBottom: roomIndex < groupedByRoom.length - 1 ? '24px' : '0' }}>
+                        {hasMultipleRooms && (
+                          <div style={{
+                            padding: '10px 12px',
+                            backgroundColor: '#f3f4f6',
+                            borderRadius: '8px 8px 0 0',
+                            border: '1px solid #e5e7eb',
+                            borderBottom: 'none',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px'
+                          }}>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                              <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                            </svg>
+                            <strong style={{ color: '#1d4ed8', fontSize: '14px' }}>
+                              {roomGroup.roomName} ({roomGroup.bookings.length} {roomGroup.bookings.length === 1 ? 'registration' : 'registrations'})
+                            </strong>
+                          </div>
+                        )}
+                        <table className="room-table" style={{ marginTop: 0 }}>
+                          <thead>
+                            <tr>
+                              <th>Student</th>
+                              <th>Start</th>
+                              <th>End</th>
+                              {!hasMultipleRooms && <th>Room</th>}
+                              <th>Status</th>
+                              <th>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {roomGroup.bookings.map(b => {
+                              const id = b.id || b.Id;
+                              const userName = b.userName || b.UserName || 'Student';
+                              const start = b.startTime || b.StartTime;
+                              const end = b.endTime || b.EndTime;
+                              const roomName = b.roomName || b.RoomName || 
+                                            (b.room && (b.room.name || b.room.Name)) ||
+                                            (b.Room && (b.Room.name || b.Room.Name)) ||
+                                            'N/A';
+                              return (
+                                <tr key={id}>
+                                  <td>{userName}</td>
+                                  <td>{start ? new Date(start).toLocaleString() : 'N/A'}</td>
+                                  <td>{end ? new Date(end).toLocaleString() : 'N/A'}</td>
+                                  {!hasMultipleRooms && <td>{roomName}</td>}
+                                  <td><span className="status-badge status-pending" style={{ fontSize: '0.625rem' }}>Pending</span></td>
+                                  <td>
+                                    <div className="action-buttons">
+                                      <button
+                                        className="btn btn-sm btn-icon btn-icon-outline color-green"
+                                        onClick={() => handleApproveRejectBooking(b, 'approve')}
+                                        title="Approve"
+                                      >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                          <polyline points="20 6 9 17 4 12"></polyline>
+                                        </svg>
+                                      </button>
+                                      <button
+                                        className="btn btn-sm btn-icon btn-icon-outline color-red"
+                                        onClick={() => handleApproveRejectBooking(b, 'reject')}
+                                        title="Reject"
+                                      >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                          <line x1="18" y1="6" x2="6" y2="18"></line>
+                                          <line x1="6" y1="6" x2="18" y2="18"></line>
+                                        </svg>
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setApprovalEvent(null)}>

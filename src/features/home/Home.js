@@ -1,14 +1,28 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { authApi, bookingApi, eventApi, labsApi, notificationApi, reportsApi } from '../../api';
+import { authApi, bookingApi, eventApi, notificationApi, reportsApi } from '../../api';
 import { getBookingStatusLabel, getBookingStatusColor } from '../../constants/bookingConstants';
-import LabList from '../lab-management/components/LabList';
-import LabDetail from '../lab-management/components/LabDetail';
 import EventList from '../event-management/components/EventList';
+import EventDetail from '../event-management/components/EventDetail';
 import BookingList from '../booking-management/components/BookingList';
 import UserProfile from '../user-management/student/UserProfile';
 import UserNotifications from '../notification-management/user/UserNotifications';
 import UserReportForm from '../reports-management/user/UserReportForm';
 import UserReports from '../reports-management/user/UserReports';
+
+const STATUS_MAP = {
+  '0': 'Pending',
+  '1': 'Active',
+  '2': 'Inactive',
+  '3': 'Cancelled',
+  '4': 'Completed',
+  '5': 'Rejected'
+};
+
+const normalizeStatus = (value) => {
+  if (value === null || value === undefined) return '';
+  const strValue = String(value);
+  return STATUS_MAP[strValue] || strValue;
+};
 
 function Home({ user: userProp }) {
   const [user, setUser] = useState(userProp);
@@ -17,13 +31,17 @@ function Home({ user: userProp }) {
   const userDropdownRef = useRef(null);
   const notificationDropdownRef = useRef(null);
   
-  // Lab detail state
-  const [selectedLabId, setSelectedLabId] = useState(null);
+  // Event detail state
+  const [viewingEventId, setViewingEventId] = useState(null);
+  
+  // Featured Events pagination state
+  const [featuredEventsPage, setFeaturedEventsPage] = useState(1);
+  const featuredEventsPerPage = 9;
 
   // Data states
   const [registeredEvents, setRegisteredEvents] = useState([]);
+  const [totalRegisteredEventsCount, setTotalRegisteredEventsCount] = useState(0);
   const [upcomingEvents, setUpcomingEvents] = useState([]);
-  const [availableLabs, setAvailableLabs] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [notificationDropdownOpen, setNotificationDropdownOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -66,6 +84,11 @@ function Home({ user: userProp }) {
     return () => clearInterval(t);
   }, [refreshUnreadCount]);
 
+  // Reset pagination when events change
+  useEffect(() => {
+    setFeaturedEventsPage(1);
+  }, [upcomingEvents.length]);
+
   // Load dashboard data
   useEffect(() => {
     console.log('=== useEffect triggered ===');
@@ -96,6 +119,8 @@ function Home({ user: userProp }) {
               
               if (!user?.id) {
                 console.log('No user ID found - cannot load registered events');
+                setRegisteredEvents([]);
+                setTotalRegisteredEventsCount(0);
                 return;
               }
               
@@ -138,6 +163,9 @@ function Home({ user: userProp }) {
               const events = (await Promise.all(eventsPromises)).filter(e => e != null);
               const eventsWithStatus = enrichEventsWithBookingStatus(events, eventBookings);
               
+              // Set total count (all registered events, including past ones)
+              setTotalRegisteredEventsCount(eventsWithStatus.length);
+              
               // Filter to only show upcoming events (StartDate >= today)
               const today = new Date();
               today.setHours(0, 0, 0, 0);
@@ -154,7 +182,8 @@ function Home({ user: userProp }) {
                 return dateA - dateB;
               });
               
-              console.log('Registered events:', upcomingRegisteredEvents.length);
+              console.log('Total registered events:', eventsWithStatus.length);
+              console.log('Upcoming registered events:', upcomingRegisteredEvents.length);
               console.log('=== LOADING REGISTERED EVENTS - END ===');
               
               setRegisteredEvents(upcomingRegisteredEvents);
@@ -162,57 +191,17 @@ function Home({ user: userProp }) {
               console.error('=== ERROR LOADING REGISTERED EVENTS ===');
               console.error('Error details:', error);
               setRegisteredEvents([]);
+              setTotalRegisteredEventsCount(0);
             }
           };
           
-          // Load available labs
-          const loadAvailableLabs = async () => {
-            try {
-              const userRoleCheck = user?.roles?.[0] || 'Student';
-              const isLecturerCheck = user?.roles?.includes('Lecturer') || user?.roles?.includes('Teacher');
-              
-              console.log('Loading available labs for user role:', userRoleCheck);
-              
-              // Try available labs endpoint first, fallback to regular labs if it fails
-              if (isLecturerCheck || userRoleCheck === 'Student') {
-                try {
-                  const response = await labsApi.getAvailableLabs();
-                  console.log('Available labs API response:', response);
-                  const labs = Array.isArray(response) ? response : (response?.data || response?.Data || []);
-                  console.log('Parsed available labs:', labs);
-                  setAvailableLabs(labs);
-                } catch (availableError) {
-                  // If available labs endpoint fails, try regular labs endpoint as fallback
-                  console.warn('Available labs endpoint failed, trying regular labs endpoint:', availableError.message);
-                  try {
-                    const response = await labsApi.getLabs({ pageSize: 10 });
-                    const labs = Array.isArray(response) ? response : (response?.data || response?.Data || []);
-                    console.log('Using regular labs endpoint, parsed labs:', labs);
-                    setAvailableLabs(labs);
-                  } catch (fallbackError) {
-                    console.error('Error loading labs (both endpoints failed):', fallbackError);
-                    setAvailableLabs([]);
-                  }
-                }
-              } else {
-                // Admin users use regular labs endpoint
-                const response = await labsApi.getLabs({ pageSize: 10 });
-                console.log('Labs API response:', response);
-                const labs = Array.isArray(response) ? response : (response?.data || response?.Data || []);
-                console.log('Parsed labs:', labs);
-                setAvailableLabs(labs);
-              }
-            } catch (error) {
-              console.error('Error loading labs:', error);
-              setAvailableLabs([]);
-            }
-          };
 
-          // Load upcoming events
+          // Load active events (sorted by newest first)
           const loadUpcomingEvents = async () => {
             try {
-              console.log('Loading upcoming events...');
-              const response = await eventApi.getUpcomingEvents();
+              console.log('Loading active events...');
+              // Get all active events (status = 0 for Active)
+              const response = await eventApi.getEvents({ status: 0, pageSize: 100 });
               console.log('Events API response:', response);
               
               let eventData = [];
@@ -228,30 +217,49 @@ function Home({ user: userProp }) {
               
               const normalizedEvents = eventData.map(event => normalizeEvent(event));
               
-              const today = new Date();
-              today.setHours(0, 0, 0, 0);
-              
-              const upcoming = normalizedEvents.filter(event => {
-                if (!event.StartDate) return false;
-                const startDate = new Date(event.StartDate);
-                return startDate >= today;
+              // Sort by newest first (createdAt descending, then by startDate)
+              normalizedEvents.sort((a, b) => {
+                // Try to get createdAt from various possible field names
+                const aCreatedAt = a.createdAt || a.CreatedAt || a.created_at || a.Created_At || 
+                                  (a.originalEvent && (a.originalEvent.createdAt || a.originalEvent.CreatedAt));
+                const bCreatedAt = b.createdAt || b.CreatedAt || b.created_at || b.Created_At || 
+                                  (b.originalEvent && (b.originalEvent.createdAt || b.originalEvent.CreatedAt));
+                
+                // If both have createdAt, use it for sorting (newest first)
+                if (aCreatedAt && bCreatedAt) {
+                  const aDate = new Date(aCreatedAt).getTime();
+                  const bDate = new Date(bCreatedAt).getTime();
+                  return bDate - aDate; // Descending (newest first)
+                }
+                
+                // If only one has createdAt, prioritize it
+                if (aCreatedAt && !bCreatedAt) return -1;
+                if (!aCreatedAt && bCreatedAt) return 1;
+                
+                // Fallback to startDate if createdAt is not available
+                const aStartDate = a.startDate || a.StartDate || a.start_date || a.Start_Date || 0;
+                const bStartDate = b.startDate || b.StartDate || b.start_date || b.Start_Date || 0;
+                const aDate = new Date(aStartDate).getTime();
+                const bDate = new Date(bStartDate).getTime();
+                
+                // Sort descending (newest first)
+                return bDate - aDate;
               });
               
-              setUpcomingEvents(upcoming.slice(0, 5));
+              setUpcomingEvents(normalizedEvents);
             } catch (error) {
               console.error('Error loading events:', error);
               setUpcomingEvents([]);
             }
           };
 
-          console.log('About to call Promise.all with loadUpcomingBookings');
-          console.log('Will call: loadUpcomingBookings, loadUpcomingEvents, loadNotifications, loadAvailableLabs');
+          console.log('About to call Promise.all with loadRegisteredEvents');
+          console.log('Will call: loadRegisteredEvents, loadUpcomingEvents, loadNotifications');
           
           await Promise.all([
             loadRegisteredEvents(),
             loadUpcomingEvents(),
-            loadNotifications(),
-            loadAvailableLabs()
+            loadNotifications()
           ]);
           console.log('Promise.all completed');
         } catch (error) {
@@ -267,8 +275,6 @@ function Home({ user: userProp }) {
       loadBookingsData();
     } else if (activeTab === 'events') {
       loadEventsData();
-    } else if (activeTab === 'labs') {
-      loadLabsData();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, user]);
@@ -338,6 +344,9 @@ function Home({ user: userProp }) {
         const events = (await Promise.all(eventsPromises)).filter(e => e != null);
         const eventsWithStatus = enrichEventsWithBookingStatus(events, eventBookings);
         
+        // Set total count (all registered events, including past ones)
+        setTotalRegisteredEventsCount(eventsWithStatus.length);
+        
         // Sort by start date (upcoming first)
         eventsWithStatus.sort((a, b) => {
           const dateA = new Date(a.StartDate || a.startDate);
@@ -367,6 +376,7 @@ function Home({ user: userProp }) {
       console.error('Error loading bookings/registered events:', error);
       if (userRole === 'Student' || (!isAdmin && !isLecturer)) {
         setRegisteredEvents([]);
+        setTotalRegisteredEventsCount(0);
       }
     } finally {
       setLoadingData(false);
@@ -401,52 +411,6 @@ function Home({ user: userProp }) {
     } catch (error) {
       console.error('Error loading events:', error);
       setUpcomingEvents([]);
-    } finally {
-      setLoadingData(false);
-    }
-  };
-
-  // Load labs data
-  const loadLabsData = async () => {
-    try {
-      setLoadingData(true);
-      const userRoleCheck = user?.roles?.[0] || 'Student';
-      const isLecturerCheck = user?.roles?.includes('Lecturer') || user?.roles?.includes('Teacher');
-      
-      console.log('Loading labs data for user role:', userRoleCheck);
-      
-      // Try available labs endpoint first, fallback to regular labs if it fails
-      if (isLecturerCheck || userRoleCheck === 'Student') {
-        try {
-          const response = await labsApi.getAvailableLabs();
-          console.log('Available labs data API response:', response);
-          const labs = Array.isArray(response) ? response : (response?.data || response?.Data || []);
-          console.log('Parsed available labs data:', labs);
-          setAvailableLabs(labs);
-        } catch (availableError) {
-          // If available labs endpoint fails, try regular labs endpoint as fallback
-          console.warn('Available labs endpoint failed, trying regular labs endpoint:', availableError.message);
-          try {
-            const response = await labsApi.getLabs({ pageSize: 20 });
-            const labs = Array.isArray(response) ? response : (response?.data || response?.Data || []);
-            console.log('Using regular labs endpoint, parsed labs data:', labs);
-            setAvailableLabs(labs);
-          } catch (fallbackError) {
-            console.error('Error loading labs data (both endpoints failed):', fallbackError);
-            setAvailableLabs([]);
-          }
-        }
-      } else {
-        // Admin users use regular labs endpoint
-        const response = await labsApi.getLabs({ pageSize: 20 });
-        console.log('Labs data API response:', response);
-        const labs = Array.isArray(response) ? response : (response?.data || response?.Data || []);
-        console.log('Parsed labs data:', labs);
-        setAvailableLabs(labs);
-      }
-    } catch (error) {
-      console.error('Error loading labs:', error);
-      setAvailableLabs([]);
     } finally {
       setLoadingData(false);
     }
@@ -507,18 +471,43 @@ function Home({ user: userProp }) {
     }
   };
 
-  // Status helpers (removed unused getStatusLabel)
-
-  // Removed unused getStatusBadgeClass
+  // Status helpers
+  const getStatusBadgeClass = (status) => {
+    const normalizedStatus = normalizeStatus(status);
+    switch (normalizedStatus) {
+      case 'Pending':
+        return 'status-badge status-pending';
+      case 'Active':
+        return 'status-badge status-available';
+      case 'Inactive':
+        return 'status-badge status-unavailable';
+      case 'Cancelled':
+        return 'status-badge status-maintenance';
+      case 'Completed':
+        return 'status-badge status-occupied';
+      default:
+        return 'status-badge unknown';
+    }
+  };
 
   const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
   };
 
   const formatTime = (dateString) => {
+    if (!dateString) return 'N/A';
     const date = new Date(dateString);
-    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    return date.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
   };
 
   const handleLogout = async () => {
@@ -647,16 +636,6 @@ function Home({ user: userProp }) {
         </svg>
       )
     },
-    (isLecturer || isAdmin) ? {
-      id: 'labs',
-      label: 'Labs',
-      icon: (
-        <svg xmlns="http://www.w3.org/2000/svg" width="1.125rem" height="1.125rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-          <polyline points="9 22 9 12 15 12 15 22"></polyline>
-        </svg>
-      )
-    } : null,
     {
       id: 'events',
       label: isLecturer ? 'My Events' : 'Events',
@@ -724,8 +703,6 @@ function Home({ user: userProp }) {
     switch (activeTab) {
       case 'dashboard':
         return renderDashboard();
-      case 'labs':
-        return renderLabs();
       case 'events':
         return renderEvents();
       case 'bookings':
@@ -750,17 +727,10 @@ function Home({ user: userProp }) {
             Welcome back, <span className="home-hero-name">{displayName.split(' ')[0]}</span>! 👋
           </h1>
           <p className="home-hero-subtitle">
-            Book labs, join events, and manage your schedule all in one place
+            Join events and manage your schedule all in one place
           </p>
           <div className="home-hero-actions">
-            <button className="btn-hero-primary" onClick={() => setActiveTab('labs')}>
-          <svg xmlns="http://www.w3.org/2000/svg" width="1.25rem" height="1.25rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M5 12h14"></path>
-                <path d="M12 5v14"></path>
-              </svg>
-              Book a Lab Now
-            </button>
-            <button className="btn-hero-secondary" onClick={() => setActiveTab('events')}>
+            <button className="btn-hero-primary" onClick={() => setActiveTab('events')}>
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M8 2v4"></path>
                 <path d="M16 2v4"></path>
@@ -791,7 +761,7 @@ function Home({ user: userProp }) {
             </svg>
           </div>
           <div className="quick-stat-content">
-            <p className="quick-stat-number">{registeredEvents.length}</p>
+            <p className="quick-stat-number">{totalRegisteredEventsCount}</p>
             <p className="quick-stat-label">Events I've Registered</p>
           </div>
         </div>
@@ -808,19 +778,6 @@ function Home({ user: userProp }) {
           <div className="quick-stat-content">
             <p className="quick-stat-number">{upcomingEvents.length}</p>
             <p className="quick-stat-label">Upcoming Events</p>
-          </div>
-        </div>
-
-        <div className="quick-stat-card">
-          <div className="quick-stat-icon purple">
-            <svg xmlns="http://www.w3.org/2000/svg" width="2rem" height="2rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-              <polyline points="9 22 9 12 15 12 15 22"></polyline>
-            </svg>
-          </div>
-          <div className="quick-stat-content">
-            <p className="quick-stat-number">{availableLabs.length}</p>
-            <p className="quick-stat-label">Available Labs</p>
           </div>
         </div>
 
@@ -867,56 +824,269 @@ function Home({ user: userProp }) {
                 <h3>No Upcoming Events</h3>
                 <p>Check back later for new events</p>
               </div>
-            ) : (
+            ) : (() => {
+              // Calculate pagination
+              const totalPages = Math.ceil(upcomingEvents.length / featuredEventsPerPage);
+              const startIndex = (featuredEventsPage - 1) * featuredEventsPerPage;
+              const endIndex = startIndex + featuredEventsPerPage;
+              const currentPageEvents = upcomingEvents.slice(startIndex, endIndex);
+              
+              return (
+                <>
               <div className="home-event-list">
-                {upcomingEvents.slice(0, 10).map(event => {
+                    {currentPageEvents.map(event => {
                   const normalized = normalizeEvent(event);
+                      const eventStatus = normalized.Status || normalized.status;
+                      const normalizedStatus = normalizeStatus(eventStatus);
                   return (
-                    <div key={normalized.Id} className="home-event-item">
-                      <div className="home-event-image">
-                        {normalized.ImageUrl ? (
-                          <img src={normalized.ImageUrl} alt={normalized.Title} />
-                        ) : (
-                          <div className="home-event-image-placeholder">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <rect width="18" height="18" x="3" y="3" rx="2" ry="2"></rect>
-                              <circle cx="9" cy="9" r="2"></circle>
-                              <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path>
+                        <div key={normalized.Id} className="home-event-item" style={{ border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', background: '#fff', display: 'flex', flexDirection: 'column' }}>
+                          <div style={{ position: 'relative', height: 140, background: '#f8fafc' }}>
+                            {normalized.ImageUrl || normalized.imageUrl ? (
+                              <img src={normalized.ImageUrl || normalized.imageUrl} alt={`${normalized.Title} cover`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ) : (
+                              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 12 }}>No image</div>
+                            )}
+                            <div style={{ position: 'absolute', top: 8, left: 8, right: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                              <span className={getStatusBadgeClass(eventStatus)}>{normalizedStatus || 'Unknown'}</span>
+                              {normalized.visibility && (
+                                <span style={{
+                                  padding: '4px 8px',
+                                  backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                  borderRadius: '8px',
+                                  fontSize: '11px',
+                                  fontWeight: '600',
+                                  color: '#3b82f6',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}>
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="2" y1="12" x2="22" y2="12"></line>
+                                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
                             </svg>
-                            <span>No Image</span>
+                                  Public
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                              <h3
+                                onClick={() => {
+                                  setViewingEventId(normalized.Id);
+                                  setActiveTab('events');
+                                }}
+                                style={{
+                                  fontSize: 16,
+                                  margin: 0,
+                                  color: '#0f172a',
+                                  cursor: 'pointer',
+                                  textDecoration: 'underline',
+                                  textUnderlineOffset: '2px'
+                                }}
+                                title="View details"
+                              >
+                                {normalized.Title}
+                              </h3>
+                            </div>
+                            {(normalized.Description || normalized.description) && (
+                              <div className="text-muted small" style={{ color: '#64748b', fontSize: '13px', marginTop: '4px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                {normalized.Description || normalized.description}
                           </div>
                         )}
+                            {/* Lecturer info - Only show for Student */}
+                            {(normalized.CreatedBy || normalized.createdBy) && userRole === 'Student' && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '8px', fontSize: '12px', color: '#64748b' }}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                  <circle cx="12" cy="7" r="4"></circle>
+                                </svg>
+                                <span style={{ fontWeight: '500' }}>Lecturer: {normalized.CreatedBy || normalized.createdBy || 'Unknown'}</span>
                       </div>
-                      <div className="home-event-info">
-                        <h4>{normalized.Title}</h4>
-                        <p className="home-event-date">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            )}
+                            {/* Date and Time */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '8px', fontSize: '12px', color: '#64748b', flexWrap: 'wrap' }}>
+                              {normalized.StartDate || normalized.startDate ? (
+                                <>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                      <line x1="16" y1="2" x2="16" y2="6"></line>
+                                      <line x1="8" y1="2" x2="8" y2="6"></line>
+                                      <line x1="3" y1="10" x2="21" y2="10"></line>
+                                    </svg>
+                                    <span>{formatDate(normalized.StartDate || normalized.startDate)}</span>
+                                  </div>
+                                  {(normalized.StartDate || normalized.startDate) && (normalized.EndDate || normalized.endDate) && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <circle cx="12" cy="12" r="10"></circle>
                             <polyline points="12 6 12 12 16 14"></polyline>
                           </svg>
-                          {formatDate(normalized.StartDate)} • {formatTime(normalized.StartDate)} - {formatTime(normalized.EndDate)}
-                        </p>
-                        {normalized.Location && (
-                          <p className="home-event-location">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-                              <circle cx="12" cy="10" r="3"></circle>
+                                      <span>{formatTime(normalized.StartDate || normalized.startDate)} - {formatTime(normalized.EndDate || normalized.endDate)}</span>
+                                    </div>
+                                  )}
+                                </>
+                              ) : null}
+                            </div>
+                            {/* Lab and Room info */}
+                            {(normalized.labName || normalized.LabName || normalized.roomName || normalized.RoomName || (normalized.roomSlots && normalized.roomSlots.length > 0) || (normalized.RoomSlots && normalized.RoomSlots.length > 0)) && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+                                {normalized.labName || normalized.LabName ? (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#ea580c', fontWeight: '600' }}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                      <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
                             </svg>
-                            {normalized.Location}
-                          </p>
-                        )}
-                        {normalized.Description && (
-                          <p className="home-event-description">{normalized.Description.substring(0, 100)}...</p>
-                        )}
+                                    <span>{normalized.labName || normalized.LabName}</span>
+                                  </div>
+                                ) : null}
+                                {(normalized.roomName || normalized.RoomName || (normalized.roomSlots && normalized.roomSlots.length > 0) || (normalized.RoomSlots && normalized.RoomSlots.length > 0)) && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#1d4ed8', fontWeight: '600' }}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                                      <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                                    </svg>
+                                    <span>
+                                      {(() => {
+                                        const roomSlots = normalized.roomSlots || normalized.RoomSlots || [];
+                                        if (roomSlots.length > 0) {
+                                          const roomNames = roomSlots
+                                            .map(slot => slot.roomName || slot.RoomName || (slot.room && (slot.room.name || slot.room.Name)) || (slot.Room && (slot.Room.name || slot.Room.Name)))
+                                            .filter(Boolean);
+                                          const uniqueRooms = [...new Set(roomNames)];
+                                          if (uniqueRooms.length === 1) {
+                                            return uniqueRooms[0];
+                                          } else if (uniqueRooms.length > 1) {
+                                            return `${uniqueRooms.length} rooms: ${uniqueRooms.join(', ')}`;
+                                          }
+                                        }
+                                        return normalized.roomName || normalized.RoomName || 'N/A';
+                                      })()}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            {/* Capacity */}
+                            {normalized.capacity != null && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '8px', fontSize: '12px', color: '#64748b', fontWeight: '600' }}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                  <circle cx="9" cy="7" r="4"></circle>
+                                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                                  <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                                </svg>
+                                <span>Capacity: {normalized.capacity} people</span>
                       </div>
-                      <button className="btn-register" onClick={() => setActiveTab('events')}>
-                        View Details
-                      </button>
+                            )}
+                            <div style={{ 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              justifyContent: 'space-between', 
+                              marginTop: 12,
+                              paddingTop: 12,
+                              borderTop: '1px solid #e5e7eb',
+                              gap: 12
+                            }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#64748b', flexShrink: 0 }}>
+                                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                                  <circle cx="12" cy="10" r="3"></circle>
+                                </svg>
+                                <span style={{ fontSize: 12, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {normalized.Location || normalized.location || 'N/A'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
                     </div>
                   );
                 })}
+                  </div>
+                  
+                  {/* Pagination */}
+                  {totalPages > 1 && (
+                    <div style={{ 
+                      display: 'flex', 
+                      justifyContent: 'center', 
+                      alignItems: 'center', 
+                      gap: '8px', 
+                      marginTop: '24px',
+                      padding: '16px 0'
+                    }}>
+                      <button
+                        onClick={() => setFeaturedEventsPage(prev => Math.max(1, prev - 1))}
+                        disabled={featuredEventsPage === 1}
+                        style={{
+                          padding: '8px 16px',
+                          border: '1px solid #e5e7eb',
+                          borderRadius: '6px',
+                          background: featuredEventsPage === 1 ? '#f3f4f6' : '#ffffff',
+                          color: featuredEventsPage === 1 ? '#9ca3af' : '#374151',
+                          cursor: featuredEventsPage === 1 ? 'not-allowed' : 'pointer',
+                          fontSize: '14px',
+                          fontWeight: '500',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M15 18l-6-6 6-6"></path>
+                        </svg>
+                        Previous
+                      </button>
+                      
+                      <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                        {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                          <button
+                            key={page}
+                            onClick={() => setFeaturedEventsPage(page)}
+                            style={{
+                              padding: '8px 12px',
+                              border: '1px solid #e5e7eb',
+                              borderRadius: '6px',
+                              background: featuredEventsPage === page ? '#2563eb' : '#ffffff',
+                              color: featuredEventsPage === page ? '#ffffff' : '#374151',
+                              cursor: 'pointer',
+                              fontSize: '14px',
+                              fontWeight: featuredEventsPage === page ? '600' : '500',
+                              minWidth: '40px'
+                            }}
+                          >
+                            {page}
+                          </button>
+                        ))}
+                      </div>
+                      
+                      <button
+                        onClick={() => setFeaturedEventsPage(prev => Math.min(totalPages, prev + 1))}
+                        disabled={featuredEventsPage === totalPages}
+                        style={{
+                          padding: '8px 16px',
+                          border: '1px solid #e5e7eb',
+                          borderRadius: '6px',
+                          background: featuredEventsPage === totalPages ? '#f3f4f6' : '#ffffff',
+                          color: featuredEventsPage === totalPages ? '#9ca3af' : '#374151',
+                          cursor: featuredEventsPage === totalPages ? 'not-allowed' : 'pointer',
+                          fontSize: '14px',
+                          fontWeight: '500',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px'
+                        }}
+                      >
+                        Next
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M9 18l6-6-6-6"></path>
+                        </svg>
+                      </button>
               </div>
             )}
+                </>
+              );
+            })()}
           </div>
         </div>
       </div>
@@ -925,17 +1095,6 @@ function Home({ user: userProp }) {
       <div className="home-quick-actions">
         <h2>Quick Actions</h2>
         <div className="home-action-grid">
-          <div className="home-action-card" onClick={() => setActiveTab('labs')}>
-            <div className="home-action-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" width="2rem" height="2rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-                <polyline points="9 22 9 12 15 12 15 22"></polyline>
-              </svg>
-            </div>
-            <h3>Browse Labs</h3>
-            <p>Find and book available labs</p>
-          </div>
-
           <div className="home-action-card" onClick={() => setActiveTab('events')}>
             <div className="home-action-icon">
               <svg xmlns="http://www.w3.org/2000/svg" width="2rem" height="2rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -975,31 +1134,20 @@ function Home({ user: userProp }) {
     </div>
   );
 
-  const renderLabs = () => {
-    if (selectedLabId) {
+  const renderEvents = () => {
+    if (viewingEventId) {
       return (
-        <LabDetail 
-          labId={selectedLabId}
-          onNavigateBack={() => setSelectedLabId(null)}
-          isAdmin={isAdmin}
+        <div className="home-content">
+          <EventDetail
+            eventId={viewingEventId}
+            onNavigateBack={() => setViewingEventId(null)}
           userRole={userRole}
         />
+        </div>
       );
     }
     
     return (
-      <div className="home-content">
-        <LabList 
-          userRole={userRole}
-          onViewLab={(labId) => {
-            setSelectedLabId(labId);
-          }}
-        />
-      </div>
-    );
-  };
-
-  const renderEvents = () => (
     <div className="home-content">
       <EventList 
         userRole={userRole}
@@ -1007,11 +1155,12 @@ function Home({ user: userProp }) {
           console.log('Selected event:', eventId);
         }}
         onViewEvent={(eventId) => {
-          console.log('View event:', eventId);
+            setViewingEventId(eventId);
         }}
       />
     </div>
   );
+  };
 
   const renderBookings = () => {
     // For students, show registered events
@@ -1054,71 +1203,184 @@ function Home({ user: userProp }) {
                   const bookingStatusColor =
                     normalized.BookingStatusColor ??
                     (bookingStatusLabel ? getBookingStatusColor(Number(bookingStatus)) : undefined);
+                  const eventStatus = normalized.Status || normalized.status;
+                  const normalizedStatus = normalizeStatus(eventStatus);
 
                   return (
-                    <div key={normalized.Id} className="home-event-item">
-                      <div className="home-event-image">
-                        {normalized.ImageUrl ? (
-                          <img src={normalized.ImageUrl} alt={normalized.Title} />
+                    <div key={normalized.Id} className="home-event-item" style={{ border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', background: '#fff', display: 'flex', flexDirection: 'column' }}>
+                      {/* Event Image */}
+                      <div style={{ position: 'relative', height: 140, background: '#f8fafc' }}>
+                        {normalized.ImageUrl || normalized.imageUrl ? (
+                          <img src={normalized.ImageUrl || normalized.imageUrl} alt={`${normalized.Title} cover`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         ) : (
-                          <div className="home-event-image-placeholder">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <rect width="18" height="18" x="3" y="3" rx="2" ry="2"></rect>
-                              <circle cx="9" cy="9" r="2"></circle>
-                              <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path>
-                            </svg>
-                            <span>No Image</span>
-                          </div>
+                          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 12 }}>No image</div>
                         )}
+                        {/* Event status badge on top of image */}
+                        <div style={{ position: 'absolute', top: 8, left: 8 }}>
+                          <span className={getStatusBadgeClass(eventStatus)}>{normalizedStatus || 'Unknown'}</span>
+                        </div>
                       </div>
-                      <div className="home-event-info">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                          <h4 style={{ margin: 0 }}>{normalized.Title}</h4>
+                      
+                      {/* Event Info */}
+                      <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {/* Title and Booking Status */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                          <h3
+                            onClick={() => {
+                              setViewingEventId(normalized.Id);
+                              setActiveTab('events');
+                            }}
+                            style={{
+                              fontSize: 16,
+                              margin: 0,
+                              color: '#0f172a',
+                              cursor: 'pointer',
+                              textDecoration: 'underline',
+                              textUnderlineOffset: '2px',
+                              fontWeight: 700,
+                              flex: 1,
+                              minWidth: 0
+                            }}
+                            title="View details"
+                          >
+                            {normalized.Title}
+                          </h3>
                           {bookingStatusLabel && (
                             <span
-                              className="home-booking-status-badge"
                               style={{
                                 display: 'inline-flex',
                                 alignItems: 'center',
                                 padding: '4px 12px',
                                 borderRadius: '9999px',
-                                fontSize: '0.75rem',
+                                fontSize: '11px',
                                 fontWeight: 600,
-                                letterSpacing: '0.01em',
                                 backgroundColor: bookingStatusColor || '#6b7280',
                                 color: '#ffffff',
-                                marginLeft: '12px',
                                 flexShrink: 0
                               }}
-                              aria-label={`Registration status: ${bookingStatusLabel}`}
                             >
                               {bookingStatusLabel}
                             </span>
                           )}
                         </div>
-                        <p className="home-event-date">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <polyline points="12 6 12 12 16 14"></polyline>
-                          </svg>
-                          {formatDate(normalized.StartDate)} • {formatTime(normalized.StartDate)} - {formatTime(normalized.EndDate)}
-                        </p>
-                        {normalized.Location && (
-                          <p className="home-event-location">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        
+                        {/* Description */}
+                        {(normalized.Description || normalized.description) && (
+                          <div style={{ color: '#64748b', fontSize: '13px', marginTop: '4px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                            {normalized.Description || normalized.description}
+                          </div>
+                        )}
+                        
+                        {/* Lecturer info */}
+                        {(normalized.CreatedBy || normalized.createdBy) && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '8px', fontSize: '12px', color: '#64748b' }}>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                              <circle cx="12" cy="7" r="4"></circle>
+                            </svg>
+                            <span style={{ fontWeight: '500' }}>Lecturer: {normalized.CreatedBy || normalized.createdBy || 'Unknown'}</span>
+                          </div>
+                        )}
+                        
+                        {/* Date and Time */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '8px', fontSize: '12px', color: '#64748b', flexWrap: 'wrap' }}>
+                          {normalized.StartDate || normalized.startDate ? (
+                            <>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                  <line x1="16" y1="2" x2="16" y2="6"></line>
+                                  <line x1="8" y1="2" x2="8" y2="6"></line>
+                                  <line x1="3" y1="10" x2="21" y2="10"></line>
+                                </svg>
+                                <span>{formatDate(normalized.StartDate || normalized.startDate)}</span>
+                              </div>
+                              {(normalized.StartDate || normalized.startDate) && (normalized.EndDate || normalized.endDate) && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <polyline points="12 6 12 12 16 14"></polyline>
+                                  </svg>
+                                  <span>{formatTime(normalized.StartDate || normalized.startDate)} - {formatTime(normalized.EndDate || normalized.endDate)}</span>
+                                </div>
+                              )}
+                            </>
+                          ) : null}
+                        </div>
+                        
+                        {/* Lab and Room info */}
+                        {(normalized.labName || normalized.LabName || normalized.roomName || normalized.RoomName || (normalized.roomSlots && normalized.roomSlots.length > 0) || (normalized.RoomSlots && normalized.RoomSlots.length > 0)) && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+                            {normalized.labName || normalized.LabName ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#ea580c', fontWeight: '600' }}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                                </svg>
+                                <span>{normalized.labName || normalized.LabName}</span>
+                              </div>
+                            ) : null}
+                            {(normalized.roomName || normalized.RoomName || (normalized.roomSlots && normalized.roomSlots.length > 0) || (normalized.RoomSlots && normalized.RoomSlots.length > 0)) && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#1d4ed8', fontWeight: '600' }}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                                  <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                                </svg>
+                                <span>
+                                  {(() => {
+                                    const roomSlots = normalized.roomSlots || normalized.RoomSlots || [];
+                                    if (roomSlots.length > 0) {
+                                      const roomNames = roomSlots
+                                        .map(slot => slot.roomName || slot.RoomName || (slot.room && (slot.room.name || slot.room.Name)) || (slot.Room && (slot.Room.name || slot.Room.Name)))
+                                        .filter(Boolean);
+                                      const uniqueRooms = [...new Set(roomNames)];
+                                      if (uniqueRooms.length === 1) {
+                                        return uniqueRooms[0];
+                                      } else if (uniqueRooms.length > 1) {
+                                        return `${uniqueRooms.length} rooms: ${uniqueRooms.join(', ')}`;
+                                      }
+                                    }
+                                    return normalized.roomName || normalized.RoomName || 'N/A';
+                                  })()}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        
+                        {/* Capacity */}
+                        {normalized.capacity != null && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '8px', fontSize: '12px', color: '#64748b', fontWeight: '600' }}>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                              <circle cx="9" cy="7" r="4"></circle>
+                              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                            </svg>
+                            <span>Capacity: {normalized.capacity} people</span>
+                          </div>
+                        )}
+                        
+                        {/* Location */}
+                        <div style={{ 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'space-between', 
+                          marginTop: 12,
+                          paddingTop: 12,
+                          borderTop: '1px solid #e5e7eb',
+                          gap: 12
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#64748b', flexShrink: 0 }}>
                               <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
                               <circle cx="12" cy="10" r="3"></circle>
                             </svg>
-                            {normalized.Location}
-                          </p>
-                        )}
-                        {normalized.Description && (
-                          <p className="home-event-description">{normalized.Description.substring(0, 150)}...</p>
-                        )}
+                            <span style={{ fontSize: 12, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {normalized.Location || normalized.location || 'N/A'}
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                      <button className="btn-register" onClick={() => setActiveTab('events')}>
-                        View Details
-                      </button>
                     </div>
                   );
                 })}
