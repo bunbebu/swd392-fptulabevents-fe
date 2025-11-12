@@ -77,9 +77,6 @@ const LecturerDashboard = ({ user: userProp }) => {
 
       setLoadingStats(true);
       try {
-        // Get current user ID
-        const userId = user?.id || user?.Id;
-
         // Fetch data in parallel with count APIs
         const [
           allBookings,

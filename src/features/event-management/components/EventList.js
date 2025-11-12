@@ -3,6 +3,57 @@ import { eventApi, authApi, bookingApi } from '../../../api';
 import CreateEvent from '../admin/CreateEvent';
 import EditEvent from '../admin/EditEvent';
 
+const STATUS_MAP = {
+  '0': 'Active',
+  '1': 'Inactive',
+  '2': 'Cancelled',
+  '3': 'Completed'
+};
+
+const normalizeStatus = (value) => {
+  if (value === null || value === undefined) return '';
+  const strValue = String(value);
+  return STATUS_MAP[strValue] || strValue;
+};
+
+const filterLecturerEvents = (events, filters) => {
+  let filtered = events;
+
+  if (filters.title) {
+    const term = filters.title.toLowerCase();
+    filtered = filtered.filter(event => {
+      const title = (event.title || '').toLowerCase();
+      const location = (event.location || '').toLowerCase();
+      return title.includes(term) || location.includes(term);
+    });
+  }
+
+  if (filters.status !== '' && filters.status !== undefined) {
+    const targetStatus = normalizeStatus(filters.status).toLowerCase();
+    filtered = filtered.filter(event => normalizeStatus(event.status).toLowerCase() === targetStatus);
+  }
+
+  if (filters.startDateFrom) {
+    const fromDate = new Date(filters.startDateFrom);
+    filtered = filtered.filter(event => {
+      if (!event.startDate) return false;
+      const start = new Date(event.startDate);
+      return !Number.isNaN(start.getTime()) && start >= fromDate;
+    });
+  }
+
+  if (filters.startDateTo) {
+    const toDate = new Date(filters.startDateTo);
+    filtered = filtered.filter(event => {
+      if (!event.startDate) return false;
+      const start = new Date(event.startDate);
+      return !Number.isNaN(start.getTime()) && start <= toDate;
+    });
+  }
+
+  return filtered;
+};
+
 /**
  * Event List Component - Common for both Admin and Users
  *
@@ -162,57 +213,6 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
     // No timeout - toast will remain visible until manually dismissed or replaced
-  };
-
-  const STATUS_MAP = {
-    '0': 'Active',
-    '1': 'Inactive',
-    '2': 'Cancelled',
-    '3': 'Completed'
-  };
-
-  const normalizeStatus = (value) => {
-    if (value === null || value === undefined) return '';
-    const strValue = String(value);
-    return STATUS_MAP[strValue] || strValue;
-  };
-
-  const filterLecturerEvents = (events, filters) => {
-    let filtered = events;
-
-    if (filters.title) {
-      const term = filters.title.toLowerCase();
-      filtered = filtered.filter(event => {
-        const title = (event.title || '').toLowerCase();
-        const location = (event.location || '').toLowerCase();
-        return title.includes(term) || location.includes(term);
-      });
-    }
-
-    if (filters.status !== '' && filters.status !== undefined) {
-      const targetStatus = normalizeStatus(filters.status).toLowerCase();
-      filtered = filtered.filter(event => normalizeStatus(event.status).toLowerCase() === targetStatus);
-    }
-
-    if (filters.startDateFrom) {
-      const fromDate = new Date(filters.startDateFrom);
-      filtered = filtered.filter(event => {
-        if (!event.startDate) return false;
-        const start = new Date(event.startDate);
-        return !Number.isNaN(start.getTime()) && start >= fromDate;
-      });
-    }
-
-    if (filters.startDateTo) {
-      const toDate = new Date(filters.startDateTo);
-      filtered = filtered.filter(event => {
-        if (!event.startDate) return false;
-        const start = new Date(event.startDate);
-        return !Number.isNaN(start.getTime()) && start <= toDate;
-      });
-    }
-
-    return filtered;
   };
 
   // Load event data with pagination
@@ -778,11 +778,6 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
     }
   };
 
-  // Open edit page
-  const openEditPage = (event) => {
-    setSelectedEvent(event);
-    setShowEditPage(true);
-  };
 
   // Apply filters
   const applyFilters = () => {
@@ -1522,7 +1517,6 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
                       const userName = b.userName || b.UserName || 'Student';
                       const start = b.startTime || b.StartTime;
                       const end = b.endTime || b.EndTime;
-                      const status = b.status !== undefined ? b.status : b.Status;
                       return (
                         <tr key={id}>
                           <td>{userName}</td>

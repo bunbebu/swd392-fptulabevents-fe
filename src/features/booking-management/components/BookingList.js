@@ -278,7 +278,7 @@ const BookingList = ({
       setLoading(false);
       setPaginationLoading(false);
     }
-  }, [apiFilters, pageSize, totalBookings]);
+  }, [apiFilters, pageSize, totalBookings, roomLabNames]);
 
   useEffect(() => {
     loadBookings(currentPage);
