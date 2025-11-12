@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { roomsApi, authApi } from '../../../api';
+import { roomsApi, authApi, bookingApi } from '../../../api';
 import RoomStatusForm from '../admin/RoomStatusForm';
 import CreateRoom from '../admin/CreateRoom';
 import EditRoom from '../admin/EditRoom';
@@ -59,6 +59,7 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
   });
 
   const isAdmin = userRole === 'Admin';
+  const isLecturer = userRole === 'Lecturer';
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
@@ -184,7 +185,89 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
 
       console.log('Normalized counts:', { normalizedTotalCount, normalizedAvailableCount, derivedTotalCount, derivedTotalPages });
 
-      setRooms(roomData);
+      // Normalize room data to handle both camelCase and PascalCase field names
+      let normalizedRooms = roomData.map(room => {
+        const normalized = {
+          ...room,
+          id: room.id || room.Id,
+          name: room.name || room.Name,
+          capacity: room.capacity || room.Capacity,
+          status: room.status || room.Status,
+          equipmentCount: room.equipmentCount || room.EquipmentCount || 0,
+          activeBookings: room.activeBookings !== undefined ? room.activeBookings : 
+                         (room.ActiveBookings !== undefined ? room.ActiveBookings : 0)
+        };
+        
+        // Log first room to debug activeBookings
+        if (roomData.indexOf(room) === 0) {
+          console.log('[RoomList] First room data:', {
+            original: room,
+            normalized: normalized,
+            activeBookings: normalized.activeBookings,
+            hasActiveBookings: 'activeBookings' in room,
+            hasActiveBookingsPascal: 'ActiveBookings' in room
+          });
+        }
+        
+        return normalized;
+      });
+
+      // Calculate activeBookings from bookings API to match RoomDetail logic
+      // RoomDetail shows all approved bookings, not just currently happening ones
+      try {
+        const roomIds = normalizedRooms.map(r => r.id).filter(Boolean);
+        if (roomIds.length > 0) {
+          // Fetch all approved bookings for these rooms in parallel
+          const allApprovedBookings = await Promise.all(
+            roomIds.map(async (roomId) => {
+              try {
+                // Get all approved bookings without pagination
+                const bookings = await bookingApi.getBookings({
+                  roomId: roomId,
+                  status: 1, // Approved
+                  // Don't send page/pageSize to get all approved bookings
+                });
+                const bookingList = Array.isArray(bookings) ? bookings : (bookings?.data || bookings?.Data || []);
+                
+                // Count all approved bookings (same logic as RoomDetail)
+                // RoomDetail counts all approved bookings from recentBookings
+                const activeCount = bookingList.length; // All approved bookings for this room
+                
+                console.log(`[RoomList] Room ${roomId} has ${activeCount} approved bookings`);
+                return { roomId, activeCount };
+              } catch (err) {
+                console.warn(`[RoomList] Failed to fetch bookings for room ${roomId}:`, err);
+                return { roomId, activeCount: null };
+              }
+            })
+          );
+          
+          // Update activeBookings with calculated values
+          const bookingCountsMap = {};
+          allApprovedBookings.forEach(({ roomId, activeCount }) => {
+            if (activeCount !== null) {
+              bookingCountsMap[roomId] = activeCount;
+            }
+          });
+          
+          normalizedRooms = normalizedRooms.map(room => {
+            if (bookingCountsMap[room.id] !== undefined) {
+              return {
+                ...room,
+                activeBookings: bookingCountsMap[room.id]
+              };
+            }
+            return room;
+          });
+          
+          console.log('[RoomList] Updated activeBookings from bookings API:', bookingCountsMap);
+        }
+      } catch (err) {
+        console.warn('[RoomList] Failed to calculate activeBookings from bookings API:', err);
+        // Continue with backend values if calculation fails
+      }
+
+      setRooms(normalizedRooms);
       setTotalPages(derivedTotalPages);
       setTotalRooms(derivedTotalCount);
       setStats({ total: normalizedTotalCount, available: normalizedAvailableCount });
@@ -560,13 +643,13 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                   <th>Status</th>
                   <th>Equipment Count</th>
                   <th>Active Bookings</th>
-                  {isAdmin && <th>Actions</th>}
+                  {(isAdmin || isLecturer) && <th>Actions</th>}
                 </tr>
               </thead>
               <tbody>
                 {loading && !paginationLoading ? (
                   <tr>
-                    <td colSpan={isAdmin ? "6" : "5"} className="loading-cell">
+                    <td colSpan={(isAdmin || isLecturer) ? "6" : "5"} className="loading-cell">
                       <div className="loading-spinner"></div>
                       Loading rooms...
                     </td>
@@ -580,12 +663,12 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                       <td><div className="skeleton-text"></div></td>
                       <td><div className="skeleton-text"></div></td>
                       <td><div className="skeleton-text"></div></td>
-                      {isAdmin && <td><div className="skeleton-text"></div></td>}
+                      {(isAdmin || isLecturer) && <td><div className="skeleton-text"></div></td>}
                     </tr>
                   ))
                 ) : rooms.length === 0 ? (
                   <tr>
-                    <td colSpan={isAdmin ? "6" : "5"} className="no-data">
+                    <td colSpan={(isAdmin || isLecturer) ? "6" : "5"} className="no-data">
                       No room data
                     </td>
                   </tr>
@@ -605,7 +688,7 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                       </td>
                       <td>{room.equipmentCount || 0}</td>
                       <td>{room.activeBookings || 0}</td>
-                      {isAdmin && (
+                      {(isAdmin || isLecturer) && (
                         <td>
                           <div className="action-buttons">
                             <button
@@ -624,45 +707,49 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                                 <circle cx="12" cy="12" r="3"/>
                               </svg>
                             </button>
-                            <button
-                              className="btn btn-sm btn-icon btn-icon-outline color-blue"
-                              onClick={() => openEditPage(room)}
-                              disabled={actionLoading}
-                              aria-label="Edit room"
-                              title="Edit"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M12 20h9"/>
-                                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/>
-                              </svg>
-                            </button>
-                            <button
-                              className="btn btn-sm btn-icon btn-icon-outline color-purple"
-                              onClick={() => openStatusModal(room)}
-                              disabled={actionLoading}
-                              aria-label="Update status"
-                              title="Update Status"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M9 12l2 2 4-4"/>
-                                <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/>
-                              </svg>
-                            </button>
-                            <button
-                              className="btn btn-sm btn-icon btn-icon-outline color-red"
-                              onClick={() => setConfirmDeleteRoom(room)}
-                              disabled={actionLoading}
-                              aria-label="Delete room"
-                              title="Delete"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <polyline points="3 6 5 6 21 6"/>
-                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
-                                <path d="M10 11v6"/>
-                                <path d="M14 11v6"/>
-                                <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>
-                              </svg>
-                            </button>
+                            {isAdmin && (
+                              <>
+                                <button
+                                  className="btn btn-sm btn-icon btn-icon-outline color-blue"
+                                  onClick={() => openEditPage(room)}
+                                  disabled={actionLoading}
+                                  aria-label="Edit room"
+                                  title="Edit"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M12 20h9"/>
+                                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+                                  </svg>
+                                </button>
+                                <button
+                                  className="btn btn-sm btn-icon btn-icon-outline color-purple"
+                                  onClick={() => openStatusModal(room)}
+                                  disabled={actionLoading}
+                                  aria-label="Update status"
+                                  title="Update Status"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M9 12l2 2 4-4"/>
+                                    <path d="M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9 9 4.03 9 9z"/>
+                                  </svg>
+                                </button>
+                                <button
+                                  className="btn btn-sm btn-icon btn-icon-outline color-red"
+                                  onClick={() => setConfirmDeleteRoom(room)}
+                                  disabled={actionLoading}
+                                  aria-label="Delete room"
+                                  title="Delete"
+                                >
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="3 6 5 6 21 6"/>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+                                    <path d="M10 11v6"/>
+                                    <path d="M14 11v6"/>
+                                    <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>
+                                  </svg>
+                                </button>
+                              </>
+                            )}
                           </div>
                         </td>
                       )}

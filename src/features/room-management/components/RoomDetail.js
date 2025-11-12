@@ -10,7 +10,7 @@ import { EquipmentList } from '../../equipment-management';
  * - US-09: Admin - Manage labs and equipment
  * - US-22: Lecturer - View room availability before approving booking
  */
-const RoomDetail = ({ roomId, onNavigateBack }) => {
+const RoomDetail = ({ roomId, onNavigateBack, userRole = 'Student' }) => {
   const [room, setRoom] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -220,21 +220,23 @@ const RoomDetail = ({ roomId, onNavigateBack }) => {
         <div className="detail-card">
           <div className="detail-card-header">
             <h3>Equipment</h3>
-            <button 
-              className="btn-new-booking"
-              onClick={() => setShowCreateEquipment(true)}
-              style={{ margin: 0 }}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M5 12h14"></path>
-                <path d="M12 5v14"></path>
-              </svg>
-              Add Equipment to Room
-            </button>
+            {userRole === 'Admin' && (
+              <button 
+                className="btn-new-booking"
+                onClick={() => setShowCreateEquipment(true)}
+                style={{ margin: 0 }}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 12h14"></path>
+                  <path d="M12 5v14"></path>
+                </svg>
+                Add Equipment to Room
+              </button>
+            )}
           </div>
           <div style={{ marginTop: '16px' }}>
             <EquipmentList 
-              userRole="Admin" 
+              userRole={userRole}
               roomId={roomId}
               showCreatePage={showCreateEquipment}
               onCreatePageClose={() => setShowCreateEquipment(false)}
@@ -250,8 +252,8 @@ const RoomDetail = ({ roomId, onNavigateBack }) => {
           </div>
         </div>
 
-        {/* Recent Bookings */}
-        {room.recentBookings && room.recentBookings.length > 0 && (
+        {/* Recent Bookings - Only show for Admin */}
+        {userRole === 'Admin' && room.recentBookings && room.recentBookings.length > 0 && (
           <div className="detail-card">
             <div className="detail-card-header">
               <h3>Recent Bookings ({room.recentBookings.length})</h3>

@@ -85,6 +85,7 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
     if (propRoomId) {
       setLocalFilters(prev => ({ ...prev, roomId: propRoomId }));
       setApiFilters(prev => ({ ...prev, roomId: propRoomId }));
+      setCurrentPage(1); // Reset to page 1 when room changes
     }
   }, [propRoomId]);
 
@@ -124,7 +125,15 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
       // Try to get equipment list first, handle other calls separately
       let equipmentList;
       try {
+        console.log('[EquipmentList] Loading equipment with filters:', cleanFilters);
         equipmentList = await equipmentApi.getEquipments(cleanFilters);
+        console.log('[EquipmentList] Equipment response:', {
+          isArray: Array.isArray(equipmentList),
+          hasData: !!equipmentList?.data,
+          hasDataArray: !!equipmentList?.Data,
+          length: Array.isArray(equipmentList) ? equipmentList.length : (equipmentList?.data?.length || equipmentList?.Data?.length || 0),
+          firstItem: Array.isArray(equipmentList) ? equipmentList[0] : (equipmentList?.data?.[0] || equipmentList?.Data?.[0])
+        });
       } catch (authErr) {
         // If 401, try to refresh token and retry once
         if (authErr.status === 401) {
@@ -139,38 +148,99 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
         }
       }
       
-      // Get counts separately with error handling
-      let totalCount = 0;
+      // Check if we have filters (roomId, name, type, status) that require filtered count
+      const hasFilters = !!(cleanFilters.roomId || cleanFilters.name || cleanFilters.serialNumber || cleanFilters.type || cleanFilters.status);
       
-      try {
-        totalCount = await equipmentApi.getEquipmentCount();
-      } catch (countErr) {
-        console.warn('Failed to get total count:', countErr);
-        // Fallback: count from equipment list if it's an array
+      let allEquipmentData = [];
+      let totalCountFromApi = 0;
+      let totalPagesFromApi = 1;
+      let equipmentData = [];
+
+      if (hasFilters) {
+        // When filters are applied, load ALL items without pagination and paginate on client-side
+        // This ensures we get all filtered items correctly
+        try {
+          const allFilters = { ...cleanFilters };
+          // Remove pagination params completely to get all items
+          // Backend returns all items when page/pageSize are not provided
+          delete allFilters.page;
+          delete allFilters.pageSize;
+          
+          console.log('[EquipmentList] Loading ALL filtered equipment with filters:', allFilters);
+          
+          // Try to get all items by calling with large pageSize first
+          let allFilteredEquipments = await equipmentApi.getEquipments(allFilters);
+          
+          // Extract equipment data from first call
+          let firstBatch = [];
+          if (Array.isArray(allFilteredEquipments)) {
+            firstBatch = allFilteredEquipments;
+          } else if (allFilteredEquipments?.data && Array.isArray(allFilteredEquipments.data)) {
+            firstBatch = allFilteredEquipments.data;
+          } else if (allFilteredEquipments?.Data && Array.isArray(allFilteredEquipments.Data)) {
+            firstBatch = allFilteredEquipments.Data;
+          }
+          
+          allEquipmentData = [...firstBatch];
+          console.log('[EquipmentList] All filtered equipment received:', firstBatch.length, 'items');
+          
+          totalCountFromApi = allEquipmentData.length;
+          totalPagesFromApi = Math.max(1, Math.ceil(totalCountFromApi / pageSize));
+          
+          // Paginate on client-side
+          const startIndex = (page - 1) * pageSize;
+          const endIndex = startIndex + pageSize;
+          equipmentData = allEquipmentData.slice(startIndex, endIndex);
+          
+          console.log('[EquipmentList] Client-side pagination - total:', totalCountFromApi, 'pages:', totalPagesFromApi, 'page:', page, 'showing:', equipmentData.length, 'items');
+        } catch (filterErr) {
+          console.warn('Failed to load filtered equipment:', filterErr);
+          // Fallback to server-side pagination
+          if (Array.isArray(equipmentList)) {
+            equipmentData = equipmentList;
+          } else if (equipmentList?.data && Array.isArray(equipmentList.data)) {
+            equipmentData = equipmentList.data;
+          } else if (equipmentList?.Data && Array.isArray(equipmentList.Data)) {
+            equipmentData = equipmentList.Data;
+          }
+          totalCountFromApi = equipmentData.length;
+          totalPagesFromApi = 1;
+        }
+      } else {
+        // No filters - use server-side pagination
+        // Get counts separately with error handling
+        let totalCount = 0;
+        try {
+          totalCount = await equipmentApi.getEquipmentCount();
+        } catch (countErr) {
+          console.warn('Failed to get total count:', countErr);
+        }
+
+        // Extract equipment data from response (handle multiple formats)
         if (Array.isArray(equipmentList)) {
-          totalCount = equipmentList.length;
+          equipmentData = equipmentList;
+        } else if (equipmentList?.data && Array.isArray(equipmentList.data)) {
+          equipmentData = equipmentList.data;
+        } else if (equipmentList?.Data && Array.isArray(equipmentList.Data)) {
+          equipmentData = equipmentList.Data;
+        }
+
+        // Calculate totalCount and totalPages
+        if (totalCount > 0) {
+          totalCountFromApi = totalCount;
+          totalPagesFromApi = Math.max(1, Math.ceil(totalCountFromApi / pageSize));
+        } else if (equipmentList?.totalPages !== undefined || equipmentList?.TotalPages !== undefined) {
+          // Use pagination metadata from response if available
+          totalPagesFromApi = equipmentList.totalPages || equipmentList.TotalPages || 1;
+          totalCountFromApi = equipmentList.totalCount || equipmentList.TotalCount || equipmentData.length;
+        } else {
+          // Fallback: use current page data length
+          totalCountFromApi = equipmentData.length;
+          totalPagesFromApi = 1;
         }
       }
 
-      // Handle both array and paginated response formats
-      let equipmentData = [];
-      let totalPagesFromApi = 1;
-      let totalCountFromApi = 0;
-
-      if (Array.isArray(equipmentList)) {
-        // If response is array, use it directly (backend already handled pagination)
-        equipmentData = equipmentList;
-        totalCountFromApi = totalCount; // Use the count from getEquipmentCount()
-        totalPagesFromApi = Math.max(1, Math.ceil(totalCountFromApi / pageSize));
-      } else if (equipmentList?.data && Array.isArray(equipmentList.data)) {
-        equipmentData = equipmentList.data;
-        totalPagesFromApi = equipmentList.totalPages || 1;
-        totalCountFromApi = equipmentList.totalCount || equipmentList.data.length;
-      } else if (equipmentList?.Data && Array.isArray(equipmentList.Data)) {
-        equipmentData = equipmentList.Data;
-        totalPagesFromApi = equipmentList.TotalPages || 1;
-        totalCountFromApi = equipmentList.TotalCount || equipmentList.Data.length;
-      }
+      console.log('[EquipmentList] Final values - totalCount:', totalCountFromApi, 'totalPages:', totalPagesFromApi, 'currentPage:', page, 'dataLength:', equipmentData.length);
 
       setEquipments(equipmentData);
       setTotalPages(totalPagesFromApi);
@@ -638,16 +708,7 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
                 </td>
               </tr>
             ) : (
-              equipments
-                .filter(equipment => {
-                  // For Lecturer role, only show Available equipment
-                  if (userRole === 'Lecturer') {
-                    const status = String(equipment.status || '').toLowerCase();
-                    return status === 'available';
-                  }
-                  return true; // Show all for Admin and other roles
-                })
-                .map((equipment) => (
+              equipments.map((equipment) => (
                 <tr key={equipment.id}>
                   <td className="col-name">{equipment.name}</td>
                   <td className="col-serial">{equipment.serialNumber || 'N/A'}</td>

@@ -409,6 +409,7 @@ const AdminDashboard = ({ user: userProp }) => {
                 eventId={viewingEventId}
                 onNavigateBack={() => setViewingEventId(null)}
                 onEditEvent={(id) => setEditingEventId(id)}
+                userRole="Admin"
               />
             </div>
           );

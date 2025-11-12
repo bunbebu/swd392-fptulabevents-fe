@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { EventList, EventDetail } from '../features/event-management';
-import { EditEvent } from '../features/event-management/admin';
-import { EquipmentList } from '../features/equipment-management';
+import { EditEvent, CreateEvent } from '../features/event-management/admin';
+import { RoomList, RoomDetail } from '../features/room-management';
 import LecturerReportsManagement from '../features/reports-management/lecturer/LecturerReportsManagement';
 import LecturerNotifications from '../features/notification-management/lecturer/LecturerNotifications';
 import { authApi, bookingApi, eventApi, labsApi, roomsApi, equipmentApi, reportsApi, notificationApi } from '../api';
@@ -14,7 +14,9 @@ const LecturerDashboard = ({ user: userProp }) => {
   const [user, setUser] = useState(userProp);
   const [viewingEventId, setViewingEventId] = useState(null);
   const [editingEventId, setEditingEventId] = useState(null);
+  const [creatingEvent, setCreatingEvent] = useState(false);
   const [eventToast, setEventToast] = useState(null);
+  const [viewingRoomId, setViewingRoomId] = useState(null);
   const userDropdownRef = useRef(null);
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
@@ -289,14 +291,14 @@ const LecturerDashboard = ({ user: userProp }) => {
         </svg>
       )
     },
-
     { 
-      id: 'equipment', 
-      label: 'Equipment', 
+      id: 'rooms', 
+      label: 'Rooms', 
       icon: (
         <svg xmlns="http://www.w3.org/2000/svg" width="1.125rem" height="1.125rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
-          <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+          <rect width="18" height="18" x="3" y="3" rx="2" ry="2"></rect>
+          <path d="M3 9h18"></path>
+          <path d="M9 21V9"></path>
         </svg>
       )
     },
@@ -339,6 +341,23 @@ const LecturerDashboard = ({ user: userProp }) => {
         return renderDashboard();
       
       case 'events':
+        if (creatingEvent) {
+          return (
+            <div className="lecturer-content">
+              <CreateEvent
+                onNavigateBack={() => {
+                  setCreatingEvent(false);
+                  setActiveTab('events');
+                }}
+                onSuccess={() => {
+                  setCreatingEvent(false);
+                  setEventToast({ message: 'Event created successfully!', type: 'success' });
+                  setActiveTab('events');
+                }}
+              />
+            </div>
+          );
+        }
         if (editingEventId) {
           return (
             <div className="lecturer-content">
@@ -360,6 +379,7 @@ const LecturerDashboard = ({ user: userProp }) => {
                 eventId={viewingEventId}
                 onNavigateBack={() => setViewingEventId(null)}
                 onEditEvent={(id) => setEditingEventId(id)}
+                userRole="Lecturer"
               />
             </div>
           );
@@ -376,10 +396,24 @@ const LecturerDashboard = ({ user: userProp }) => {
           </div>
         );
 
-      case 'equipment':
+      case 'rooms':
+        if (viewingRoomId) {
+          return (
+            <div className="lecturer-content">
+              <RoomDetail
+                roomId={viewingRoomId}
+                onNavigateBack={() => setViewingRoomId(null)}
+                userRole="Lecturer"
+              />
+            </div>
+          );
+        }
         return (
           <div className="lecturer-content">
-            <EquipmentList userRole="Lecturer" />
+            <RoomList
+              userRole="Lecturer"
+              onViewRoom={(roomId) => setViewingRoomId(roomId)}
+            />
           </div>
         );
 
@@ -458,21 +492,18 @@ const LecturerDashboard = ({ user: userProp }) => {
             <p>Welcome back, {displayName}. Manage bookings, events, and track attendance</p>
           </div>
           <div className="dashboard-actions">
-            <button className="btn-new-booking">
+            <button 
+              className="btn-new-booking"
+              onClick={() => {
+                setCreatingEvent(true);
+                setActiveTab('events');
+              }}
+            >
               <svg xmlns="http://www.w3.org/2000/svg" width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M5 12h14"></path>
                 <path d="M12 5v14"></path>
               </svg>
               Create Event
-            </button>
-            <button className="btn-secondary">
-              <svg xmlns="http://www.w3.org/2000/svg" width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M8 2v4"></path>
-                <path d="M16 2v4"></path>
-                <rect width="1.125rem" height="1.125rem" x="3" y="4" rx="2"></rect>
-                <path d="M3 10h18"></path>
-              </svg>
-              View Calendar
             </button>
           </div>
         </div>

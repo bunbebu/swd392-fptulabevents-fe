@@ -1157,6 +1157,59 @@ export async function deleteEvent(id, confirmDeletion = true) {
   });
 }
 
+/**
+ * Approve event (Admin only)
+ * POST /api/events/{id}/approve
+ * @param {string} id - Event UUID
+ * @param {string} approvalNote - Optional approval note
+ * @returns {Promise<Object>} Approved event data
+ */
+export async function approveEvent(id, approvalNote = null) {
+  const payload = {};
+  if (approvalNote) {
+    payload.ApprovalNote = approvalNote;
+  }
+  return await request(`/api/events/${id}/approve`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+/**
+ * Reject event (Admin only)
+ * POST /api/events/{id}/reject
+ * @param {string} id - Event UUID
+ * @param {string} rejectionReason - Rejection reason (required)
+ * @returns {Promise<Object>} Rejected event data
+ */
+export async function rejectEvent(id, rejectionReason) {
+  const payload = {
+    RejectionReason: rejectionReason
+  };
+  return await request(`/api/events/${id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+/**
+ * Get pending events (Admin only)
+ * GET /api/events/pending
+ * @returns {Promise<Array>} List of pending events
+ */
+export async function getPendingEvents() {
+  return await request('/api/events/pending', { method: 'GET' });
+}
+
+/**
+ * Get pending event count (Admin only)
+ * GET /api/events/pending-count
+ * @returns {Promise<Object>} Object with PendingCount property
+ */
+export async function getPendingEventCount() {
+  return await request('/api/events/pending-count', { method: 'GET' });
+}
+
 // ============================================================================
 // NOTIFICATION MANAGEMENT API
 // ============================================================================
@@ -1671,7 +1724,11 @@ export const eventApi = {
   getActiveEventCount,
   createEvent,
   updateEvent,
-  deleteEvent
+  deleteEvent,
+  approveEvent,
+  rejectEvent,
+  getPendingEvents,
+  getPendingEventCount
 };
 
 // Notification Management API

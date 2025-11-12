@@ -4,10 +4,12 @@ import CreateEvent from '../admin/CreateEvent';
 import EditEvent from '../admin/EditEvent';
 
 const STATUS_MAP = {
-  '0': 'Active',
-  '1': 'Inactive',
-  '2': 'Cancelled',
-  '3': 'Completed'
+  '0': 'Pending',
+  '1': 'Active',
+  '2': 'Inactive',
+  '3': 'Cancelled',
+  '4': 'Completed',
+  '5': 'Rejected'
 };
 
 const normalizeStatus = (value) => {
@@ -121,6 +123,13 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
   const [approvalEvent, setApprovalEvent] = useState(null);
   const [pendingBookings, setPendingBookings] = useState([]);
   const [loadingApprovals, setLoadingApprovals] = useState(false);
+  
+  // Event approval/rejection modals
+  const [approveEventModal, setApproveEventModal] = useState(null);
+  const [rejectEventModal, setRejectEventModal] = useState(null);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [approvalNote, setApprovalNote] = useState('');
+  const [processingApproval, setProcessingApproval] = useState(false);
 
   // Helper function to normalize event data (handle both Title/title)
   const normalizeEvent = (event) => {
@@ -210,6 +219,49 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
     }
   };
 
+  // Handle approve event
+  const handleApproveEvent = async () => {
+    if (!approveEventModal) return;
+    
+    setProcessingApproval(true);
+    try {
+      await eventApi.approveEvent(approveEventModal.id, approvalNote || null);
+      setApproveEventModal(null);
+      setApprovalNote('');
+      showToast('Event approved successfully!', 'success');
+      await loadEvents(currentPage);
+    } catch (err) {
+      console.error('Failed to approve event', err);
+      showToast(err.message || 'Failed to approve event', 'error');
+    } finally {
+      setProcessingApproval(false);
+    }
+  };
+
+  // Handle reject event
+  const handleRejectEvent = async () => {
+    if (!rejectEventModal) return;
+    
+    if (!rejectionReason.trim()) {
+      showToast('Please provide a rejection reason', 'error');
+      return;
+    }
+    
+    setProcessingApproval(true);
+    try {
+      await eventApi.rejectEvent(rejectEventModal.id, rejectionReason);
+      setRejectEventModal(null);
+      setRejectionReason('');
+      showToast('Event rejected successfully', 'success');
+      await loadEvents(currentPage);
+    } catch (err) {
+      console.error('Failed to reject event', err);
+      showToast(err.message || 'Failed to reject event', 'error');
+    } finally {
+      setProcessingApproval(false);
+    }
+  };
+
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
     // No timeout - toast will remain visible until manually dismissed or replaced
@@ -237,8 +289,17 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
         )
       );
 
+      // For students, only show Active events
+      if (isStudent) {
+        cleanFilters.status = '1'; // Active status
+      }
+
+      // Note: Admin should see ALL events (both Admin and Lecturer created events)
+      // Do not add any creator/user filter for Admin - backend will return all events
+
       let eventList;
       if (isLecturer) {
+        // Lecturer: Only show events created by this lecturer
         try {
           eventList = await eventApi.getMyEvents();
         } catch (myEventsErr) {
@@ -253,8 +314,17 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
           }
         }
       } else {
+        // Admin and Student: Get all events (Admin sees all, Student sees only Active)
+        // Backend will handle role-based filtering (Admin sees all statuses, Student sees only Active)
         try {
+          console.log('[EventList] Loading events for Admin/Student with filters:', cleanFilters);
           eventList = await eventApi.getEvents(cleanFilters);
+          console.log('[EventList] Received events from API:', {
+            isArray: Array.isArray(eventList),
+            hasData: !!(eventList?.data || eventList?.Data),
+            dataLength: Array.isArray(eventList) ? eventList.length : (eventList?.data?.length || eventList?.Data?.length || 0),
+            rawResponse: eventList
+          });
         } catch (authErr) {
           if (authErr.status === 401) {
             try {
@@ -271,6 +341,7 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
 
       let totalCount = 0;
       let activeCount = 0;
+      let pendingCount = 0;
       let derivedTotalCount = 0;
       let derivedTotalPages = 1;
 
@@ -294,6 +365,17 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
             activeCount = eventList.filter(event => normalizeStatus(event.status).toLowerCase() === 'active').length;
           }
         }
+
+        // Get pending count if filtering by Pending status
+        if (isAdmin && cleanFilters.status === '0') {
+          try {
+            const pendingCountResult = await eventApi.getPendingEventCount();
+            pendingCount = pendingCountResult?.PendingCount || pendingCountResult?.pendingCount || 0;
+            console.log('[EventList] Pending count from API:', pendingCount);
+          } catch (pendingErr) {
+            console.warn('Failed to get pending count:', pendingErr);
+          }
+        }
       }
 
       // Handle array response format
@@ -313,14 +395,91 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
 
       if (!isLecturer) {
         const hasNonPagingFilters = !!(filters.title || filters.location || filters.status !== '' || filters.startDateFrom || filters.startDateTo);
-        derivedTotalCount = (!hasNonPagingFilters && totalCount) ? totalCount : totalCountFromApi;
+        
+        // When there are filters, try to get accurate count from specific API endpoints
+        // For Pending status: use getPendingEventCount API
+        // For other filters: use heuristic estimation
+        if (hasNonPagingFilters) {
+          // If filtering by Pending status and we have the count from API, use it
+          if (cleanFilters.status === '0' && pendingCount > 0) {
+            derivedTotalCount = pendingCount;
+            console.log('[EventList] Using pending count from API:', pendingCount);
+          } else if (eventData.length === pageSize) {
+            // Full page: assume there are at least (currentPage + 1) pages
+            // This ensures "Next" button is enabled and user can navigate forward
+            // The estimate will be corrected when we reach a non-full page
+            derivedTotalCount = (page + 1) * pageSize;
+          } else {
+            // Non-full page: this is definitely the last page
+            // Calculate exact total: all previous pages + current page items
+            derivedTotalCount = ((page - 1) * pageSize) + eventData.length;
+          }
+        } else {
+          // No filters: use the total count from API (accurate)
+          derivedTotalCount = totalCount || totalCountFromApi;
+        }
+        
         derivedTotalPages = Math.max(1, Math.ceil((derivedTotalCount || 0) / pageSize));
-        console.log('Normalized counts:', { totalCount, activeCount, derivedTotalCount, derivedTotalPages });
+        console.log('Normalized counts:', { 
+          totalCount, 
+          activeCount, 
+          derivedTotalCount, 
+          derivedTotalPages,
+          hasNonPagingFilters,
+          currentPageDataLength: eventData.length,
+          pageSize,
+          currentPage: page
+        });
       } else {
         console.log('Lecturer event load:', { totalItems: eventData.length });
       }
 
       let normalizedEvents = eventData.map(event => normalizeEvent(event));
+      
+      // Debug: Log all events received (for Admin debugging)
+      if (isAdmin) {
+        const allCreators = [...new Set(normalizedEvents.map(e => e.createdBy || e.CreatedBy).filter(Boolean))];
+        const pendingEvents = normalizedEvents.filter(e => normalizeStatus(e.status) === 'Pending');
+        const pendingCreators = [...new Set(pendingEvents.map(e => e.createdBy || e.CreatedBy).filter(Boolean))];
+        
+        console.log('[EventList] Normalized events for Admin:', {
+          total: normalizedEvents.length,
+          allCreators: allCreators,
+          events: normalizedEvents.map(e => ({
+            id: e.id,
+            title: e.title,
+            status: e.status,
+            normalizedStatus: normalizeStatus(e.status),
+            createdBy: e.createdBy || e.CreatedBy
+          })),
+          pendingEvents: {
+            total: pendingEvents.length,
+            creators: pendingCreators,
+            events: pendingEvents.map(e => ({
+              id: e.id,
+              title: e.title,
+              createdBy: e.createdBy || e.CreatedBy
+            }))
+          }
+        });
+        
+        // Warn if all pending events are from Admin/Administrator (possible backend filtering issue)
+        if (pendingEvents.length > 0 && pendingCreators.every(c => c === 'Admin' || c === 'Administrator')) {
+          console.warn('[EventList] WARNING: All pending events are from Admin/Administrator. No Lecturer events found. This might indicate a backend filtering issue.');
+        }
+      }
+      
+      // IMPORTANT: Do NOT filter events by creator/user for Admin
+      // Admin should see ALL events (both Admin and Lecturer created events)
+      // Only filter by status if needed (handled by backend API)
+      
+      // For students, filter to only show Active events (additional safety check)
+      if (isStudent) {
+        normalizedEvents = normalizedEvents.filter(event => {
+          const eventStatus = normalizeStatus(event.status);
+          return eventStatus === 'Active';
+        });
+      }
       
       // Sort by newest first (prefer createdAt if available, fallback to startDate)
       // This ensures newest events appear first for all roles (admin, lecturer, student)
@@ -357,10 +516,12 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
         normalizedEvents = filterLecturerEvents(normalizedEvents, apiFilters);
       }
 
+      // For Lecturer: client-side pagination (slice events)
+      // For Admin/Student: backend already did pagination, use all events from response
       const startIndex = (page - 1) * pageSize;
       const eventsForDisplay = isLecturer
         ? normalizedEvents.slice(startIndex, startIndex + pageSize)
-        : normalizedEvents;
+        : normalizedEvents; // Backend already paginated, use all events from response
 
       setEvents(eventsForDisplay);
 
@@ -438,7 +599,7 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
       setLoading(false);
       setPaginationLoading(false);
     }
-  }, [apiFilters, currentPage, pageSize, isLecturer]);
+  }, [apiFilters, currentPage, pageSize, isLecturer, isAdmin, isStudent]);
 
   useEffect(() => {
     loadEvents();
@@ -782,11 +943,12 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
   // Apply filters
   const applyFilters = () => {
     // Copy local filters to API filters
+    // For students, always set status to Active (1)
     setApiFilters(prev => ({
       ...prev,
       title: localFilters.searchTerm,
       location: localFilters.searchTerm,
-      status: localFilters.status,
+      status: isStudent ? '1' : localFilters.status, // Force Active status for students
       startDateFrom: localFilters.startDateFrom,
       startDateTo: localFilters.startDateTo
     }));
@@ -817,7 +979,10 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
 
   // Get status badge class
   const getStatusBadgeClass = (status) => {
-    switch (status?.toString()) {
+    const normalizedStatus = normalizeStatus(status);
+    switch (normalizedStatus) {
+      case 'Pending':
+        return 'status-badge status-pending';
       case 'Active':
         return 'status-badge status-available';
       case 'Inactive':
@@ -826,21 +991,32 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
         return 'status-badge status-maintenance';
       case 'Completed':
         return 'status-badge status-occupied';
+      case 'Rejected':
+        return 'status-badge status-rejected';
       default:
         return 'status-badge unknown';
     }
   };
 
-  // Format date
+  // Format date (MMM dd, yyyy)
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     const date = new Date(dateString);
-    return date.toLocaleString('en-US', {
+    return date.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
-      day: 'numeric',
+      day: 'numeric'
+    });
+  };
+
+  // Format time (HH:mm)
+  const formatTime = (dateString) => {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('en-US', {
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
+      hour12: false
     });
   };
 
@@ -989,19 +1165,24 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
                 )}
               </div>
 
-              <div className="filter-group">
-                <select
-                  value={localFilters.status}
-                  onChange={(e) => setLocalFilters(prev => ({ ...prev, status: e.target.value }))}
-                  className="filter-select"
-                >
-                  <option value="">All Status</option>
-                  <option value="0">Active</option>
-                  <option value="1">Inactive</option>
-                  <option value="2">Cancelled</option>
-                  <option value="3">Completed</option>
-                </select>
-              </div>
+              {/* Status filter - Hidden for students (only show Active events) */}
+              {!isStudent && (
+                <div className="filter-group">
+                  <select
+                    value={localFilters.status}
+                    onChange={(e) => setLocalFilters(prev => ({ ...prev, status: e.target.value }))}
+                    className="filter-select"
+                  >
+                    <option value="">All Status</option>
+                    <option value="0">Pending</option>
+                    <option value="1">Active</option>
+                    <option value="2">Inactive</option>
+                    <option value="3">Cancelled</option>
+                    <option value="4">Completed</option>
+                    <option value="5">Rejected</option>
+                  </select>
+                </div>
+              )}
 
               <div className="filter-actions">
                 <button
@@ -1047,7 +1228,29 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
                         ) : (
                           <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 12 }}>No image</div>
                         )}
-                        <span className={getStatusBadgeClass(event.status)} style={{ position: 'absolute', top: 8, left: 8 }}>{event.status || 'Unknown'}</span>
+                        <div style={{ position: 'absolute', top: 8, left: 8, right: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                          <span className={getStatusBadgeClass(event.status)}>{event.status || 'Unknown'}</span>
+                          {event.visibility && (
+                            <span style={{
+                              padding: '4px 8px',
+                              backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                              borderRadius: '8px',
+                              fontSize: '11px',
+                              fontWeight: '600',
+                              color: '#3b82f6',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}>
+                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <line x1="2" y1="12" x2="22" y2="12"></line>
+                                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                              </svg>
+                              Public
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
@@ -1070,16 +1273,95 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
                           )}
                         </div>
                         {event.description && (
-                          <div className="text-muted small" style={{ color: '#64748b' }}>
-                            {event.description.substring(0, 80)}{event.description.length > 80 ? '…' : ''}
+                          <div className="text-muted small" style={{ color: '#64748b', fontSize: '13px', marginTop: '4px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                            {event.description}
                           </div>
                         )}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 4 }}>
-                          <div style={{ fontSize: 12, color: '#334155' }}>Start: <strong>{formatDate(event.startDate)}</strong></div>
-                          <div style={{ fontSize: 12, color: '#334155' }}>End: <strong>{formatDate(event.endDate)}</strong></div>
-                          <div style={{ fontSize: 12, color: '#334155' }}>Capacity: <strong>{typeof event.capacity === 'number' ? event.capacity : 'N/A'}</strong></div>
-                          <div style={{ fontSize: 12, color: '#334155' }}>Registered: <strong>{event.bookingCount || 0}</strong></div>
+                        {/* Lecturer info - Only show for Student and Admin, not for Lecturer */}
+                        {(event.createdBy || event.CreatedBy) && (isStudent || isAdmin) && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '8px', fontSize: '12px', color: '#64748b' }}>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                              <circle cx="12" cy="7" r="4"></circle>
+                            </svg>
+                            <span style={{ fontWeight: '500' }}>Lecturer: {event.createdBy || event.CreatedBy || 'Unknown'}</span>
+                          </div>
+                        )}
+                        {/* Date and Time */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '8px', fontSize: '12px', color: '#64748b', flexWrap: 'wrap' }}>
+                          {event.startDate && (
+                            <>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                  <line x1="16" y1="2" x2="16" y2="6"></line>
+                                  <line x1="8" y1="2" x2="8" y2="6"></line>
+                                  <line x1="3" y1="10" x2="21" y2="10"></line>
+                                </svg>
+                                <span>{formatDate(event.startDate)}</span>
+                              </div>
+                              {event.startDate && event.endDate && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <polyline points="12 6 12 12 16 14"></polyline>
+                                  </svg>
+                                  <span>{formatTime(event.startDate)} - {formatTime(event.endDate)}</span>
+                                </div>
+                              )}
+                            </>
+                          )}
                         </div>
+                        {/* Lab and Room info */}
+                        {(event.labName || event.LabName || event.roomName || event.RoomName || (event.roomSlots && event.roomSlots.length > 0) || (event.RoomSlots && event.RoomSlots.length > 0)) && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
+                            {event.labName || event.LabName ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#ea580c', fontWeight: '600' }}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                                </svg>
+                                <span>{event.labName || event.LabName}</span>
+                              </div>
+                            ) : null}
+                            {(event.roomName || event.RoomName || (event.roomSlots && event.roomSlots.length > 0) || (event.RoomSlots && event.RoomSlots.length > 0)) && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', color: '#1d4ed8', fontWeight: '600' }}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                                  <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                                </svg>
+                                <span>
+                                  {(() => {
+                                    const roomSlots = event.roomSlots || event.RoomSlots || [];
+                                    if (roomSlots.length > 0) {
+                                      const roomNames = roomSlots
+                                        .map(slot => slot.roomName || slot.RoomName || (slot.room && (slot.room.name || slot.room.Name)) || (slot.Room && (slot.Room.name || slot.Room.Name)))
+                                        .filter(Boolean);
+                                      const uniqueRooms = [...new Set(roomNames)];
+                                      if (uniqueRooms.length === 1) {
+                                        return uniqueRooms[0];
+                                      } else if (uniqueRooms.length > 1) {
+                                        return `${uniqueRooms.length} rooms: ${uniqueRooms.join(', ')}`;
+                                      }
+                                    }
+                                    return event.roomName || event.RoomName || 'N/A';
+                                  })()}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {/* Capacity */}
+                        {event.capacity != null && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '8px', fontSize: '12px', color: '#64748b', fontWeight: '600' }}>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                              <circle cx="9" cy="7" r="4"></circle>
+                              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                            </svg>
+                            <span>Capacity: {event.capacity} people</span>
+                          </div>
+                        )}
                         <div style={{ 
                           display: 'flex', 
                           alignItems: 'center', 
@@ -1108,8 +1390,45 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
                             minWidth: 0,
                             marginLeft: 'auto'
                           }}>
-                            {isStudent && (
-                              registeredEventIds.has(String(event.id).toLowerCase()) ? (
+                            {isStudent && (() => {
+                              const eventStatus = normalizeStatus(event.status);
+                              const isEventActive = eventStatus === 'Active';
+                              
+                              // Only show register button if event is Active
+                              if (!isEventActive) {
+                                return (
+                                  <button
+                                    className="btn btn-sm"
+                                    style={{ 
+                                      background: '#9ca3af', 
+                                      color: 'white',
+                                      border: 'none',
+                                      padding: '0 12px',
+                                      height: '32px',
+                                      fontSize: '12px',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      gap: '4px',
+                                      whiteSpace: 'nowrap',
+                                      lineHeight: '1',
+                                      flexShrink: 0,
+                                      cursor: 'not-allowed',
+                                      opacity: 0.6
+                                    }}
+                                    disabled
+                                    title={`Event is ${eventStatus}. Only Active events can be registered.`}
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                      <path d="M5 12h14"></path>
+                                      <path d="M12 5v14"></path>
+                                    </svg>
+                                    Register
+                                  </button>
+                                );
+                              }
+                              
+                              return registeredEventIds.has(String(event.id).toLowerCase()) ? (
                                 <button
                                   className="btn btn-sm"
                                   style={{ 
@@ -1189,10 +1508,72 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
                                     </button>
                                   );
                                 })()
-                              )
-                            )}
-                            {(isAdmin || userRole === 'Lecturer') && (
-                              <>
+                              );
+                            })()}
+                            {/* Admin: Approve/Reject buttons for Pending events - on same line */}
+                            {isAdmin && (() => {
+                              const eventStatus = normalizeStatus(event.status);
+                              if (eventStatus === 'Pending') {
+                                return (
+                                  <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                                    <button
+                                      className="btn btn-sm"
+                                      onClick={() => setApproveEventModal(event)}
+                                      disabled={processingApproval || actionLoading}
+                                      title="Approve event"
+                                      style={{
+                                        background: '#10b981',
+                                        color: '#ffffff',
+                                        border: 'none',
+                                        padding: '4px 8px',
+                                        height: '28px',
+                                        fontSize: '11px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '4px',
+                                        whiteSpace: 'nowrap',
+                                        borderRadius: 6
+                                      }}
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <polyline points="20 6 9 17 4 12"></polyline>
+                                      </svg>
+                                      Approve
+                                    </button>
+                                    <button
+                                      className="btn btn-sm"
+                                      onClick={() => setRejectEventModal(event)}
+                                      disabled={processingApproval || actionLoading}
+                                      title="Reject event"
+                                      style={{
+                                        background: '#ef4444',
+                                        color: '#ffffff',
+                                        border: 'none',
+                                        padding: '4px 8px',
+                                        height: '28px',
+                                        fontSize: '11px',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '4px',
+                                        whiteSpace: 'nowrap',
+                                        borderRadius: 6
+                                      }}
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                                      </svg>
+                                      Reject
+                                    </button>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })()}
+                            {/* Approvals button - Only for Lecturer, not for Admin */}
+                            {isLecturer && (
                               <button
                                 className="btn btn-sm"
                                 onClick={() => openApprovalsForEvent(event)}
@@ -1221,32 +1602,6 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
                                   <path d="M3 10h18"></path>
                                 </svg>
                                 Approvals
-                              </button>
-                              </>
-                            )}
-                            {isAdmin && (
-                              <button
-                                className="btn btn-sm btn-icon btn-icon-outline color-red"
-                                onClick={() => setConfirmDeleteEvent(event)}
-                                disabled={actionLoading}
-                                aria-label="Delete event"
-                                title="Delete"
-                                style={{ 
-                                  width: '32px', 
-                                  height: '32px', 
-                                  padding: 0,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center'
-                                }}
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <polyline points="3 6 5 6 21 6"/>
-                                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
-                                  <path d="M10 11v6"/>
-                                  <path d="M14 11v6"/>
-                                  <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>
-                                </svg>
                               </button>
                             )}
                           </div>
@@ -1556,6 +1911,151 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setApprovalEvent(null)}>
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Approve Event Modal */}
+      {approveEventModal && (
+        <div className="modal-overlay" onClick={() => {
+          if (!processingApproval) {
+            setApproveEventModal(null);
+            setApprovalNote('');
+          }
+        }}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Approve Event</h3>
+            </div>
+            <div className="modal-body">
+              <p>Are you sure you want to approve the event <strong>"{approveEventModal.title || approveEventModal.Title}"</strong>?</p>
+              <p style={{ fontSize: '14px', color: '#6b7280', marginTop: '8px' }}>
+                This will change the event status to <strong>Active</strong> and allow students to register.
+              </p>
+              <div style={{ marginTop: '16px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
+                  Approval Note (Optional):
+                </label>
+                <textarea
+                  value={approvalNote}
+                  onChange={(e) => setApprovalNote(e.target.value)}
+                  placeholder="Add a note about this approval..."
+                  style={{
+                    width: '100%',
+                    minHeight: '80px',
+                    padding: '8px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    fontFamily: 'inherit',
+                    resize: 'vertical'
+                  }}
+                  disabled={processingApproval}
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  setApproveEventModal(null);
+                  setApprovalNote('');
+                }}
+                disabled={processingApproval}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleApproveEvent}
+                disabled={processingApproval}
+                style={{ background: '#10b981' }}
+              >
+                {processingApproval ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                    Approving...
+                  </>
+                ) : (
+                  'Approve Event'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Event Modal */}
+      {rejectEventModal && (
+        <div className="modal-overlay" onClick={() => {
+          if (!processingApproval) {
+            setRejectEventModal(null);
+            setRejectionReason('');
+          }
+        }}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Reject Event</h3>
+            </div>
+            <div className="modal-body">
+              <p>Are you sure you want to reject the event <strong>"{rejectEventModal.title || rejectEventModal.Title}"</strong>?</p>
+              <p style={{ fontSize: '14px', color: '#6b7280', marginTop: '8px' }}>
+                This will change the event status to <strong>Rejected</strong> and prevent students from registering.
+              </p>
+              <div style={{ marginTop: '16px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500', color: '#dc2626' }}>
+                  Rejection Reason <span style={{ color: '#dc2626' }}>*</span>:
+                </label>
+                <textarea
+                  value={rejectionReason}
+                  onChange={(e) => setRejectionReason(e.target.value)}
+                  placeholder="Please provide a reason for rejecting this event..."
+                  required
+                  style={{
+                    width: '100%',
+                    minHeight: '100px',
+                    padding: '8px',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '6px',
+                    fontSize: '14px',
+                    fontFamily: 'inherit',
+                    resize: 'vertical'
+                  }}
+                  disabled={processingApproval}
+                />
+                {!rejectionReason.trim() && (
+                  <p style={{ fontSize: '12px', color: '#dc2626', marginTop: '4px' }}>
+                    Rejection reason is required
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  setRejectEventModal(null);
+                  setRejectionReason('');
+                }}
+                disabled={processingApproval}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={handleRejectEvent}
+                disabled={processingApproval || !rejectionReason.trim()}
+              >
+                {processingApproval ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                    Rejecting...
+                  </>
+                ) : (
+                  'Reject Event'
+                )}
               </button>
             </div>
           </div>
