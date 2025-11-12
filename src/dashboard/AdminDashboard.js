@@ -1,7 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { UserList } from '../features/user-management';
-import { EquipmentList, EquipmentDetail } from '../features/equipment-management';
-import EditEquipment from '../features/equipment-management/admin/EditEquipment';
 import { RoomList } from '../features/room-management';
 import RoomDetail from '../features/room-management/components/RoomDetail';
 import { LabList, LabDetail } from '../features/lab-management';
@@ -9,7 +7,6 @@ import CreateLab from '../features/lab-management/admin/CreateLab';
 import EditLab from '../features/lab-management/admin/EditLab';
 import { EditEvent } from '../features/event-management/admin';
 import { EventList, EventDetail } from '../features/event-management';
-import { BookingList, BookingDetail } from '../features/booking-management';
 import { NotificationManagement } from '../features/notification-management';
 import { ReportManagement } from '../features/reports-management';
 import {
@@ -33,14 +30,9 @@ const AdminDashboard = ({ user: userProp }) => {
   const [creatingLab, setCreatingLab] = useState(false);
   const [editingLabId, setEditingLabId] = useState(null);
   const [labToast, setLabToast] = useState(null);
-  const [viewingEquipmentId, setViewingEquipmentId] = useState(null);
-  const [editingEquipmentId, setEditingEquipmentId] = useState(null);
-  const [equipmentToast, setEquipmentToast] = useState(null);
   const [viewingEventId, setViewingEventId] = useState(null);
   const [editingEventId, setEditingEventId] = useState(null);
   const [eventToast, setEventToast] = useState(null);
-  const [viewingBookingId, setViewingBookingId] = useState(null);
-  const [bookingToast, setBookingToast] = useState(null);
   const [recentBookings, setRecentBookings] = useState([]);
   const [loadingBookings, setLoadingBookings] = useState(false);
   const userDropdownRef = useRef(null);
@@ -221,18 +213,7 @@ const AdminDashboard = ({ user: userProp }) => {
         </svg>
       )
     },
-    { 
-      id: 'bookings', 
-      label: 'Bookings', 
-      icon: (
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M8 2v4"></path>
-          <path d="M16 2v4"></path>
-          <rect width="18" height="18" x="3" y="4" rx="2"></rect>
-          <path d="M3 10h18"></path>
-        </svg>
-      )
-    },
+    
     { 
       id: 'users', 
       label: 'Users', 
@@ -242,16 +223,6 @@ const AdminDashboard = ({ user: userProp }) => {
           <path d="M16 3.128a4 4 0 0 1 0 7.744"></path>
           <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
           <circle cx="9" cy="7" r="4"></circle>
-        </svg>
-      )
-    },
-    { 
-      id: 'equipment', 
-      label: 'Equipment', 
-      icon: (
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
-          <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
         </svg>
       )
     },
@@ -339,68 +310,11 @@ const AdminDashboard = ({ user: userProp }) => {
     switch (activeTab) {
       case 'dashboard':
         return renderDashboard();
-      case 'bookings':
-        if (viewingBookingId) {
-          return (
-            <div className="admin-content">
-              <BookingDetail
-                bookingId={viewingBookingId}
-                onNavigateBack={() => setViewingBookingId(null)}
-                userRole="Admin"
-              />
-            </div>
-          );
-        }
-        return (
-          <div className="admin-content">
-            <BookingList
-              userRole="Admin"
-              onViewBooking={(bookingId) => setViewingBookingId(bookingId)}
-              initialToast={bookingToast}
-              onToastShown={() => setBookingToast(null)}
-            />
-          </div>
-        );
+      
       case 'users':
         return (
           <div className="admin-content">
             <UserList />
-          </div>
-        );
-      case 'equipment':
-        if (editingEquipmentId) {
-          return (
-            <div className="admin-content">
-              <EditEquipment
-                equipmentId={editingEquipmentId}
-                onNavigateBack={() => setEditingEquipmentId(null)}
-                onSuccess={() => {
-                  setEditingEquipmentId(null);
-                  setEquipmentToast({ message: 'Equipment updated successfully!', type: 'success' });
-                }}
-              />
-            </div>
-          );
-        }
-        if (viewingEquipmentId) {
-          return (
-            <div className="admin-content">
-              <EquipmentDetail
-                equipmentId={viewingEquipmentId}
-                onNavigateBack={() => setViewingEquipmentId(null)}
-              />
-            </div>
-          );
-        }
-        return (
-          <div className="admin-content">
-            <EquipmentList 
-              userRole="Admin" 
-              onViewEquipment={(equipmentId) => setViewingEquipmentId(equipmentId)}
-              onEditEquipment={(equipmentId) => setEditingEquipmentId(equipmentId)}
-              initialToast={equipmentToast}
-              onToastShown={() => setEquipmentToast(null)}
-            />
           </div>
         );
       case 'rooms':
@@ -494,6 +408,7 @@ const AdminDashboard = ({ user: userProp }) => {
               <EventDetail
                 eventId={viewingEventId}
                 onNavigateBack={() => setViewingEventId(null)}
+                onEditEvent={(id) => setEditingEventId(id)}
               />
             </div>
           );
@@ -541,6 +456,7 @@ const AdminDashboard = ({ user: userProp }) => {
         return renderDashboard();
     }
   };
+
 
   const renderDashboard = () => {
     // Helper function to format date
@@ -688,7 +604,7 @@ const AdminDashboard = ({ user: userProp }) => {
           <div className="recent-header">
             <div className="recent-title">
               <h2>Recent Bookings & Their Status</h2>
-              <button className="view-all-btn" onClick={() => setActiveTab('bookings')}>View All</button>
+              <button className="view-all-btn" onClick={() => setActiveTab('events')}>Manage in Events</button>
             </div>
           </div>
 
@@ -710,10 +626,7 @@ const AdminDashboard = ({ user: userProp }) => {
                     <div
                       key={booking.id}
                       className="booking-card"
-                      onClick={() => {
-                        setViewingBookingId(booking.id);
-                        setActiveTab('bookings');
-                      }}
+                      onClick={() => setActiveTab('events')}
                       style={{ cursor: 'pointer' }}
                     >
                       <div className="booking-info">
@@ -777,7 +690,7 @@ const AdminDashboard = ({ user: userProp }) => {
           </button>
 
           <div className="sidebar-brand">
-            <div className="brand-logo">FL</div>
+            <img src={require('../assets/images/fpt.png')} alt="FPT Logo" className="brand-logo" style={{ objectFit: 'contain' }} />
             <div className="brand-text">
               <h3>FPT Lab Events</h3>
               <p>ADMIN PANEL</p>

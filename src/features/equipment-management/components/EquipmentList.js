@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { equipmentApi, authApi } from '../../../api';
+import { equipmentApi, authApi, roomsApi } from '../../../api';
 import { EQUIPMENT_TYPE_OPTIONS, EQUIPMENT_STATUS_OPTIONS, getEquipmentStatusLabel } from '../../../constants/equipmentConstants';
 import EquipmentForm from '../admin/EquipmentForm';
 import EquipmentStatusForm from '../admin/EquipmentStatusForm';
@@ -19,7 +19,7 @@ import CreateEquipment from '../admin/CreateEquipment';
  * - UC-10: Manage Equipment (Admin)
  * - UC-40: Equipment Status Update (Admin)
  */
-const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipment, onEditEquipment, initialToast, onToastShown }) => {
+const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipment, onEditEquipment, initialToast, onToastShown, roomId: propRoomId, onCreateEquipmentClick, showCreatePage: externalShowCreatePage, onCreatePageClose }) => {
   const [equipments, setEquipments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [paginationLoading, setPaginationLoading] = useState(false);
@@ -29,6 +29,8 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
   const [totalPages, setTotalPages] = useState(1);
   const [totalEquipments, setTotalEquipments] = useState(0);
   const [toast, setToast] = useState(null);
+  const [roomOptions, setRoomOptions] = useState([]);
+  const [roomOptionsLoading, setRoomOptionsLoading] = useState(false);
 
   // Show initial toast passed from parent once on mount
   useEffect(() => {
@@ -45,7 +47,14 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
   }, [initialToast]);
   
   // Modal states
-  const [showCreatePage, setShowCreatePage] = useState(false);
+  const [showCreatePage, setShowCreatePage] = useState(externalShowCreatePage || false);
+  
+  // Sync with external showCreatePage prop
+  useEffect(() => {
+    if (externalShowCreatePage !== undefined) {
+      setShowCreatePage(externalShowCreatePage);
+    }
+  }, [externalShowCreatePage]);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [selectedEquipment, setSelectedEquipment] = useState(null);
@@ -57,7 +66,7 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
     searchTerm: '',
     type: '',
     status: '',
-    roomId: ''
+    roomId: propRoomId || ''
   });
 
   // API filter states
@@ -66,10 +75,18 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
     serialNumber: '',
     type: '',
     status: '',
-    roomId: '',
+    roomId: propRoomId || '',
     page: 1,
     pageSize: 8
   });
+
+  // Update filters when propRoomId changes
+  useEffect(() => {
+    if (propRoomId) {
+      setLocalFilters(prev => ({ ...prev, roomId: propRoomId }));
+      setApiFilters(prev => ({ ...prev, roomId: propRoomId }));
+    }
+  }, [propRoomId]);
 
   const isAdmin = userRole === 'Admin';
 
@@ -186,6 +203,31 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
     loadEquipments();
   }, [loadEquipments]);
 
+  useEffect(() => {
+    const loadRooms = async () => {
+      try {
+        setRoomOptionsLoading(true);
+        const roomsData = await roomsApi.getRooms({ page: 1, pageSize: 500 });
+        let normalizedRooms = [];
+        if (Array.isArray(roomsData)) {
+          normalizedRooms = roomsData;
+        } else if (roomsData?.data && Array.isArray(roomsData.data)) {
+          normalizedRooms = roomsData.data;
+        } else if (roomsData?.Data && Array.isArray(roomsData.Data)) {
+          normalizedRooms = roomsData.Data;
+        }
+        setRoomOptions(normalizedRooms);
+      } catch (err) {
+        console.error('Failed to load rooms for equipment filter:', err);
+        setRoomOptions([]);
+      } finally {
+        setRoomOptionsLoading(false);
+      }
+    };
+
+    loadRooms();
+  }, []);
+
   // Pagination handler
   const handlePageChange = (newPage) => {
     if (newPage >= 1 && newPage <= totalPages) {
@@ -197,8 +239,14 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
   // CRUD operation handlers
   const handleCreateEquipmentSuccess = async () => {
     setShowCreatePage(false);
+    if (onCreatePageClose) onCreatePageClose();
     showToast('Equipment created successfully!', 'success');
     await loadEquipments(currentPage);
+  };
+  
+  const handleCreatePageBack = () => {
+    setShowCreatePage(false);
+    if (onCreatePageClose) onCreatePageClose();
   };
 
   const handleEditEquipment = async (equipmentData) => {
@@ -351,25 +399,31 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
     return (
     <div className="equipment-list-container">
       {showCreatePage ? (
-        <CreateEquipment onNavigateBack={() => setShowCreatePage(false)} onSuccess={handleCreateEquipmentSuccess} />
+        <CreateEquipment 
+          onNavigateBack={handleCreatePageBack} 
+          onSuccess={handleCreateEquipmentSuccess}
+          initialRoomId={propRoomId}
+        />
       ) : (
         <>
-          <div className="equipment-list-header">
-            <h2>Equipment Management</h2>
-            {isAdmin && (
-              <button 
-                className="btn-new-booking"
-                onClick={() => setShowCreatePage(true)}
-                disabled={actionLoading}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M5 12h14"></path>
-                  <path d="M12 5v14"></path>
-                </svg>
-                Create New Equipment
-              </button>
-            )}
-          </div>
+          {!propRoomId && (
+            <div className="equipment-list-header">
+              <h2>Equipment Management</h2>
+              {isAdmin && (
+                <button 
+                  className="btn-new-booking"
+                  onClick={() => setShowCreatePage(true)}
+                  disabled={actionLoading}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M5 12h14"></path>
+                    <path d="M12 5v14"></path>
+                  </svg>
+                  Create New Equipment
+                </button>
+              )}
+            </div>
+          )}
 
       {/* Success/Error Notification above table */}
       {toast && (
@@ -502,6 +556,26 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
                 </option>
               ))}
           </select>
+            {!propRoomId && (
+              <select
+                value={localFilters.roomId}
+                onChange={(e) => setLocalFilters(prev => ({ ...prev, roomId: e.target.value }))}
+                className="filter-select"
+                disabled={roomOptionsLoading}
+              >
+                <option value="">{roomOptionsLoading ? 'Loading rooms...' : 'All Rooms'}</option>
+                {roomOptions.map((room) => {
+                  const id = room.id || room.Id;
+                  const name = room.name || room.Name || 'Unnamed room';
+                  const labName = room.labName || room.LabName;
+                  return (
+                    <option key={id} value={id}>
+                      {labName ? `${name} (${labName})` : name}
+                    </option>
+                  );
+                })}
+              </select>
+            )}
           </div>
           
           <div className="filter-actions">
@@ -527,7 +601,6 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
         <table className="equipment-table">
             <thead>
               <tr>
-              <th>ID</th>
               <th className="col-name">Name</th>
               <th className="col-serial">Serial Number</th>
               <th>Type</th>
@@ -540,7 +613,7 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
             <tbody>
             {loading && !paginationLoading ? (
               <tr>
-                <td colSpan={isAdmin ? "8" : "7"} className="loading-cell">
+                <td colSpan={isAdmin ? "7" : "6"} className="loading-cell">
                   <div className="loading-spinner"></div>
                   Loading equipment...
                 </td>
@@ -555,13 +628,12 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
                   <td><div className="skeleton-text"></div></td>
                   <td><div className="skeleton-text"></div></td>
                   <td><div className="skeleton-text"></div></td>
-                  <td><div className="skeleton-text"></div></td>
                   {isAdmin && <td><div className="skeleton-text"></div></td>}
                 </tr>
               ))
             ) : equipments.length === 0 ? (
               <tr>
-                <td colSpan={isAdmin ? "8" : "7"} className="no-data">
+                <td colSpan={isAdmin ? "7" : "6"} className="no-data">
                   No equipment data
                 </td>
               </tr>
@@ -577,14 +649,11 @@ const EquipmentList = ({ userRole = 'Student', onSelectEquipment, onViewEquipmen
                 })
                 .map((equipment) => (
                 <tr key={equipment.id}>
-                  <td>
-                    {equipment.id?.substring(0, 8)}...
-                  </td>
                   <td className="col-name">{equipment.name}</td>
                   <td className="col-serial">{equipment.serialNumber || 'N/A'}</td>
                   <td>{equipment.type || 'N/A'}</td>
                   <td>
-                    <span className={getStatusBadgeClass(equipment.status)} style={{ fontSize: '12px' }}>
+                    <span className={getStatusBadgeClass(equipment.status)} style={{ fontSize: '0.625rem' }}>
                       {equipment.status || 'Unknown'}
                     </span>
                   </td>

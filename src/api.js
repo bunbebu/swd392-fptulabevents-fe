@@ -987,6 +987,26 @@ export async function getEvents(filters = {}) {
 }
 
 /**
+ * Get events created by the currently logged-in user
+ * GET /api/events/my-events
+ * @returns {Promise<Array>} List of events created by the current user
+ */
+export async function getMyEvents() {
+  return await request('/api/events/my-events', { method: 'GET' });
+}
+
+/**
+ * Get events created by a specific user
+ * GET /api/events/user/{userId}
+ * Requires Admin role or the same lecturer user
+ * @param {string} userId - User UUID
+ * @returns {Promise<Array>} List of events created by the specified user
+ */
+export async function getEventsByUserId(userId) {
+  return await request(`/api/events/user/${userId}`, { method: 'GET' });
+}
+
+/**
  * Get event by ID
  * GET /api/events/{id}
  * @param {string} id - Event UUID
@@ -1642,6 +1662,8 @@ export const rolesApi = {
 // Event Management API
 export const eventApi = {
   getEvents,
+  getMyEvents,
+  getEventsByUserId,
   getEventById,
   getUpcomingEvents,
   getEventsByDateRange,
@@ -1890,6 +1912,7 @@ export async function getBookings(filters = {}) {
 
   if (filters.roomId) params.append('RoomId', filters.roomId);
   if (filters.userId) params.append('UserId', filters.userId);
+  if (filters.eventId) params.append('EventId', filters.eventId);
   if (filters.status !== undefined) params.append('Status', String(filters.status));
   if (filters.from) params.append('From', filters.from);
   if (filters.to) params.append('To', filters.to);

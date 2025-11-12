@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { authApi, bookingApi, eventApi, labsApi, notificationApi, reportsApi } from '../../api';
+import { getBookingStatusLabel, getBookingStatusColor } from '../../constants/bookingConstants';
 import LabList from '../lab-management/components/LabList';
 import LabDetail from '../lab-management/components/LabDetail';
 import EventList from '../event-management/components/EventList';
@@ -25,6 +26,7 @@ function Home({ user: userProp }) {
   const [availableLabs, setAvailableLabs] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [notificationDropdownOpen, setNotificationDropdownOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
   const [toast, setToast] = useState(null);
@@ -44,6 +46,25 @@ function Home({ user: userProp }) {
       }
     }
   }, []);
+
+  const refreshUnreadCount = React.useCallback(async () => {
+    try {
+      const count = await notificationApi.getUnreadNotificationCount();
+      const normalized =
+        typeof count === 'number'
+          ? count
+          : (count?.count ?? count?.Count ?? count?.unreadCount ?? count?.UnreadCount ?? 0);
+      setUnreadCount(normalized);
+    } catch (_e) {
+      // ignore errors silently
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshUnreadCount();
+    const t = setInterval(refreshUnreadCount, 60000);
+    return () => clearInterval(t);
+  }, [refreshUnreadCount]);
 
   // Load dashboard data
   useEffect(() => {
@@ -115,15 +136,22 @@ function Home({ user: userProp }) {
               });
               
               const events = (await Promise.all(eventsPromises)).filter(e => e != null);
+              const eventsWithStatus = enrichEventsWithBookingStatus(events, eventBookings);
               
               // Filter to only show upcoming events (StartDate >= today)
               const today = new Date();
               today.setHours(0, 0, 0, 0);
               
-              const upcomingRegisteredEvents = events.filter(event => {
+              const upcomingRegisteredEvents = eventsWithStatus.filter(event => {
                 if (!event.StartDate) return false;
                 const startDate = new Date(event.StartDate);
                 return startDate >= today;
+              });
+              
+              upcomingRegisteredEvents.sort((a, b) => {
+                const dateA = new Date(a.StartDate || a.startDate);
+                const dateB = new Date(b.StartDate || b.startDate);
+                return dateA - dateB;
               });
               
               console.log('Registered events:', upcomingRegisteredEvents.length);
@@ -308,16 +336,17 @@ function Home({ user: userProp }) {
         });
         
         const events = (await Promise.all(eventsPromises)).filter(e => e != null);
+        const eventsWithStatus = enrichEventsWithBookingStatus(events, eventBookings);
         
         // Sort by start date (upcoming first)
-        events.sort((a, b) => {
+        eventsWithStatus.sort((a, b) => {
           const dateA = new Date(a.StartDate || a.startDate);
           const dateB = new Date(b.StartDate || b.startDate);
           return dateA - dateB;
         });
         
-        console.log('Registered events loaded:', events.length);
-        setRegisteredEvents(events);
+        console.log('Registered events loaded:', eventsWithStatus.length);
+        setRegisteredEvents(eventsWithStatus);
       } else {
         // For lecturers/admins, load bookings
         console.log('Loading all bookings for user:', user.id);
@@ -436,8 +465,27 @@ function Home({ user: userProp }) {
       if (!user?.id) return;
       
       const response = await notificationApi.getUserNotifications({ pageSize: 10 });
-      const notifs = Array.isArray(response) ? response : (response?.data || []);
+      const rawList = Array.isArray(response) ? response : (response?.data || response?.Data || []);
+      const notifs = rawList.map((item) => ({
+        ...item,
+        isRead: item.isRead ?? item.IsRead,
+        status: item.status ?? item.Status,
+        startDate: item.startDate ?? item.StartDate,
+        endDate: item.endDate ?? item.EndDate,
+        title: item.title ?? item.Title,
+        content: item.content ?? item.Content,
+        createdAt: item.createdAt ?? item.CreatedAt,
+      }));
       setNotifications(notifs);
+      // Also update unread count from list as fallback
+      const localUnread = notifs.filter(n => !n.isRead).length;
+      setUnreadCount((prev) => {
+        if (typeof prev === 'number' && prev > localUnread) {
+          return prev;
+        }
+        return localUnread;
+      });
+      await refreshUnreadCount();
     } catch (error) {
       console.error('Error loading notifications:', error);
       setNotifications([]);
@@ -515,6 +563,69 @@ function Home({ user: userProp }) {
     };
   };
 
+  const parseBookingStatus = (booking) => {
+    if (!booking) return undefined;
+    const rawStatus =
+      booking.status ??
+      booking.Status ??
+      booking.bookingStatus ??
+      booking.BookingStatus;
+    if (rawStatus === undefined || rawStatus === null) return undefined;
+    const statusNumber = Number(rawStatus);
+    return Number.isNaN(statusNumber) ? undefined : statusNumber;
+  };
+
+  const enrichEventsWithBookingStatus = (events = [], eventBookings = []) => {
+    if (!Array.isArray(events)) return [];
+
+    const bookingMap = new Map();
+
+    if (Array.isArray(eventBookings)) {
+      eventBookings.forEach((booking) => {
+        const eventId = booking?.eventId || booking?.EventId;
+        if (!eventId) return;
+
+        const status = parseBookingStatus(booking);
+        const bookingId = booking?.id || booking?.Id;
+        const key = String(eventId).toLowerCase();
+
+        // Prefer keeping the first booking encountered; assume single active booking per event
+        if (!bookingMap.has(key)) {
+          bookingMap.set(key, {
+            status,
+            bookingId,
+            booking
+          });
+        }
+      });
+    }
+
+    return events.map((event) => {
+      const eventId = String(event.Id || event.id || '').toLowerCase();
+      const info = bookingMap.get(eventId);
+
+      if (!info || info.status === undefined) {
+        return {
+          ...event,
+          BookingStatus: undefined,
+          BookingStatusLabel: null,
+          BookingStatusColor: undefined,
+          BookingId: info?.bookingId,
+          BookingData: info?.booking
+        };
+      }
+
+      return {
+        ...event,
+        BookingStatus: info.status,
+        BookingStatusLabel: getBookingStatusLabel(info.status),
+        BookingStatusColor: getBookingStatusColor(info.status),
+        BookingId: info.bookingId,
+        BookingData: info.booking
+      };
+    });
+  };
+
   const displayName = user?.fullname || user?.username || 'User';
   const displayEmail = user?.email || 'user@fpt.edu.vn';
   const avatarInitials = getAvatarInitials(displayName);
@@ -536,7 +647,7 @@ function Home({ user: userProp }) {
         </svg>
       )
     },
-    {
+    (isLecturer || isAdmin) ? {
       id: 'labs',
       label: 'Labs',
       icon: (
@@ -545,7 +656,7 @@ function Home({ user: userProp }) {
           <polyline points="9 22 9 12 15 12 15 22"></polyline>
         </svg>
       )
-    },
+    } : null,
     {
       id: 'events',
       label: isLecturer ? 'My Events' : 'Events',
@@ -606,7 +717,7 @@ function Home({ user: userProp }) {
         </svg>
       )
     }
-  ];
+  ].filter(Boolean);
 
   // Render different content based on active tab
   const renderContent = () => {
@@ -934,6 +1045,16 @@ function Home({ user: userProp }) {
               <div className="home-event-list">
                 {registeredEvents.map(event => {
                   const normalized = normalizeEvent(event);
+                  const bookingStatus = normalized.BookingStatus;
+                  const bookingStatusLabel =
+                    normalized.BookingStatusLabel ??
+                    (bookingStatus !== undefined && bookingStatus !== null
+                      ? getBookingStatusLabel(Number(bookingStatus))
+                      : null);
+                  const bookingStatusColor =
+                    normalized.BookingStatusColor ??
+                    (bookingStatusLabel ? getBookingStatusColor(Number(bookingStatus)) : undefined);
+
                   return (
                     <div key={normalized.Id} className="home-event-item">
                       <div className="home-event-image">
@@ -951,7 +1072,30 @@ function Home({ user: userProp }) {
                         )}
                       </div>
                       <div className="home-event-info">
-                        <h4>{normalized.Title}</h4>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <h4 style={{ margin: 0 }}>{normalized.Title}</h4>
+                          {bookingStatusLabel && (
+                            <span
+                              className="home-booking-status-badge"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                padding: '4px 12px',
+                                borderRadius: '9999px',
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                letterSpacing: '0.01em',
+                                backgroundColor: bookingStatusColor || '#6b7280',
+                                color: '#ffffff',
+                                marginLeft: '12px',
+                                flexShrink: 0
+                              }}
+                              aria-label={`Registration status: ${bookingStatusLabel}`}
+                            >
+                              {bookingStatusLabel}
+                            </span>
+                          )}
+                        </div>
                         <p className="home-event-date">
                           <svg xmlns="http://www.w3.org/2000/svg" width="1rem" height="1rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <circle cx="12" cy="12" r="10"></circle>
@@ -1023,7 +1167,7 @@ function Home({ user: userProp }) {
       <header className="home-header">
         <div className="home-header-content">
           <div className="home-brand">
-            <div className="brand-logo">FL</div>
+            <img src={require('../../assets/images/fpt.png')} alt="FPT Logo" className="brand-logo" style={{ objectFit: 'contain' }} />
             <div className="brand-text">
               <h3>FPT Lab Events</h3>
               <p className="brand-subtitle">{isLecturer ? 'Lecturer Portal' : 'Student Portal'}</p>
@@ -1060,20 +1204,48 @@ function Home({ user: userProp }) {
             <div 
               className="notification-dropdown-container" 
               ref={notificationDropdownRef}
-              onMouseEnter={() => setNotificationDropdownOpen(true)}
+              onMouseEnter={() => {
+                setNotificationDropdownOpen(true);
+                loadNotifications();
+                refreshUnreadCount();
+              }}
               onMouseLeave={() => setNotificationDropdownOpen(false)}
+              style={{ position: 'relative' }}
             >
               <button 
                 className="home-icon-btn" 
                 title="Notifications"
                 onClick={() => setActiveTab('notifications')}
+                style={{ position: 'relative' }}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path>
                   <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path>
                 </svg>
-                {notifications.filter(n => !n.isRead).length > 0 && (
-                  <span className="home-notification-badge">{notifications.filter(n => !n.isRead).length}</span>
+                {unreadCount > 0 && (
+                  <span
+                    className="home-notification-badge"
+                    style={{
+                      position: 'absolute',
+                      top: '-4px',
+                      right: '-4px',
+                      background: '#ef4444',
+                      color: '#fff',
+                      borderRadius: '9999px',
+                      minWidth: '18px',
+                      height: '18px',
+                      lineHeight: '18px',
+                      padding: '0 5px',
+                      fontSize: '0.65rem',
+                      fontWeight: 700,
+                      textAlign: 'center',
+                      boxShadow: '0 0 0 2px #fff',
+                      zIndex: 50,
+                      pointerEvents: 'none'
+                    }}
+                  >
+                    {unreadCount > 10 ? '10+' : unreadCount}
+                  </span>
                 )}
               </button>
               

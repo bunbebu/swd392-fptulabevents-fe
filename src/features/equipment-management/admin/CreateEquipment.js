@@ -26,7 +26,7 @@ import { EQUIPMENT_TYPE_OPTIONS } from '../../../constants/equipmentConstants';
  * - File validation (type, size)
  * - Fallback to URL input if Firebase is not configured
  */
-const CreateEquipment = ({ onNavigateBack, onSuccess }) => {
+const CreateEquipment = ({ onNavigateBack, onSuccess, initialRoomId }) => {
 
   const [formData, setFormData] = useState({
     name: '',
@@ -34,7 +34,7 @@ const CreateEquipment = ({ onNavigateBack, onSuccess }) => {
     serialNumber: '',
     type: 0,
     imageUrl: '',
-    roomId: '',
+    roomId: initialRoomId || '',
     lastMaintenanceDate: '',
     nextMaintenanceDate: ''
   });
@@ -60,6 +60,16 @@ const CreateEquipment = ({ onNavigateBack, onSuccess }) => {
       }
     };
   }, [previewUrl]);
+
+  // Update formData when initialRoomId changes
+  useEffect(() => {
+    if (initialRoomId) {
+      setFormData(prev => ({
+        ...prev,
+        roomId: initialRoomId
+      }));
+    }
+  }, [initialRoomId]);
 
   // Load rooms when component mounts
   useEffect(() => {
@@ -198,7 +208,8 @@ const CreateEquipment = ({ onNavigateBack, onSuccess }) => {
         serialNumber: formData.serialNumber.trim(),
         type: parseInt(formData.type),
         imageUrl: imageUrl || null,
-        roomId: formData.roomId.trim() || null,
+        // Ensure roomId is set if initialRoomId is provided, even if formData.roomId is empty
+        roomId: (initialRoomId || formData.roomId.trim()) || null,
         lastMaintenanceDate: formData.lastMaintenanceDate ?
           new Date(formData.lastMaintenanceDate).toISOString() : null,
         nextMaintenanceDate: formData.nextMaintenanceDate ?
@@ -413,24 +424,54 @@ const CreateEquipment = ({ onNavigateBack, onSuccess }) => {
               <div className="form-group">
                 <label htmlFor="roomId">
                   Room
+                  {initialRoomId && (
+                    <span style={{ marginLeft: '8px', color: '#10b981', fontSize: '0.875rem', fontWeight: 'normal' }}>
+                      (Auto-assigned to this room)
+                    </span>
+                  )}
                 </label>
-                <select
-                  id="roomId"
-                  name="roomId"
-                  value={formData.roomId}
-                  onChange={handleChange}
-                  className={errors.roomId ? 'error' : ''}
-                  disabled={loading || roomsLoading}
-                >
-                  <option value="">Select a room (optional)</option>
-                  {rooms.map(room => (
-                    <option key={room.id} value={room.id}>
-                      {room.name} - {room.location} (Capacity: {room.capacity})
-                    </option>
-                  ))}
-                </select>
+                {initialRoomId ? (
+                  <div style={{ 
+                    padding: '12px 16px', 
+                    border: '1px solid #d1d5db', 
+                    borderRadius: '0.5rem',
+                    background: '#f9fafb',
+                    color: '#374151'
+                  }}>
+                    {(() => {
+                      const selectedRoom = rooms.find(r => (r.id || r.Id) === initialRoomId);
+                      return selectedRoom 
+                        ? `${selectedRoom.name || selectedRoom.Name || 'Unknown'}${selectedRoom.location ? ` - ${selectedRoom.location || selectedRoom.Location}` : ''}${selectedRoom.capacity ? ` (Capacity: ${selectedRoom.capacity})` : ''}`
+                        : `Room ID: ${initialRoomId}`;
+                    })()}
+                  </div>
+                ) : (
+                  <select
+                    id="roomId"
+                    name="roomId"
+                    value={formData.roomId}
+                    onChange={handleChange}
+                    className={errors.roomId ? 'error' : ''}
+                    disabled={loading || roomsLoading}
+                  >
+                    <option value="">Select a room (optional)</option>
+                    {rooms.map(room => {
+                      const roomId = room.id || room.Id;
+                      const roomName = room.name || room.Name || 'Unknown';
+                      const roomLocation = room.location || room.Location || '';
+                      const roomCapacity = room.capacity || 0;
+                      return (
+                        <option key={roomId} value={roomId}>
+                          {roomName}{roomLocation ? ` - ${roomLocation}` : ''} (Capacity: {roomCapacity})
+                        </option>
+                      );
+                    })}
+                  </select>
+                )}
                 {errors.roomId && <span className="error-message">{errors.roomId}</span>}
-                <small className="form-hint">Leave empty if not assigned to room</small>
+                {!initialRoomId && (
+                  <small className="form-hint">Leave empty if not assigned to room</small>
+                )}
               </div>
 
               {/* Last Maintenance Date */}

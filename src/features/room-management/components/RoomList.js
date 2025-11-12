@@ -555,7 +555,6 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
             <table className="room-table">
               <thead>
                 <tr>
-                  <th>ID</th>
                   <th className="col-name">Name</th>
                   <th>Capacity</th>
                   <th>Status</th>
@@ -567,7 +566,7 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
               <tbody>
                 {loading && !paginationLoading ? (
                   <tr>
-                    <td colSpan={isAdmin ? "7" : "6"} className="loading-cell">
+                    <td colSpan={isAdmin ? "6" : "5"} className="loading-cell">
                       <div className="loading-spinner"></div>
                       Loading rooms...
                     </td>
@@ -581,29 +580,18 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                       <td><div className="skeleton-text"></div></td>
                       <td><div className="skeleton-text"></div></td>
                       <td><div className="skeleton-text"></div></td>
-                      <td><div className="skeleton-text"></div></td>
                       {isAdmin && <td><div className="skeleton-text"></div></td>}
                     </tr>
                   ))
                 ) : rooms.length === 0 ? (
                   <tr>
-                    <td colSpan={isAdmin ? "7" : "6"} className="no-data">
+                    <td colSpan={isAdmin ? "6" : "5"} className="no-data">
                       No room data
                     </td>
                   </tr>
                 ) : (
                   rooms.map((room) => (
                     <tr key={room.id} className={room.isOptimistic ? 'optimistic-row' : ''}>
-                      <td>
-                        {room.id?.substring(0, 8)}...
-                        {room.isOptimistic && (
-                          <span className="optimistic-indicator" title="Saving...">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M21 12a9 9 0 11-6.219-8.56"/>
-                            </svg>
-                          </span>
-                        )}
-                      </td>
                       <td className="col-name">
                         <div>
                           <strong>{room.name}</strong>

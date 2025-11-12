@@ -168,6 +168,11 @@ const BookingApprovalManagement = () => {
   const handleApproveReject = async () => {
     if (!selectedBooking || !approvalAction) return;
 
+    // Extra confirmation before submitting action
+    const actionLabel = approvalAction === 'approve' ? 'Approve' : 'Reject';
+    const confirmed = window.confirm(`Are you sure you want to ${actionLabel.toLowerCase()} this booking?`);
+    if (!confirmed) return;
+
     setActionLoading(true);
     try {
       const bookingId = selectedBooking.id || selectedBooking.Id;
@@ -438,7 +443,10 @@ const BookingApprovalManagement = () => {
                     <td>{formatDate(startTime)}</td>
                     <td>{formatDate(endTime)}</td>
                     <td>
-                      <span className={`status-badge status-${statusInfo.class}`}>
+                      <span
+                        className={`status-badge status-${statusInfo.class}`}
+                        style={{ fontSize: '0.75rem' }}
+                      >
                         {statusInfo.label}
                       </span>
                     </td>

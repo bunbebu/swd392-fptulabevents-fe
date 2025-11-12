@@ -58,13 +58,18 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
   });
 
   const isAdmin = userRole === 'Admin';
-  const canCreateEvent = isAdmin || userRole === 'Lecturer';
+  const isLecturer = userRole === 'Lecturer';
+  const canCreateEvent = isAdmin || isLecturer;
   const isStudent = userRole === 'Student';
   
   // State for registered events (for students)
   const [registeredEventIds, setRegisteredEventIds] = useState(new Set());
   const [registeringEventId, setRegisteringEventId] = useState(null);
   const [confirmRegisterEvent, setConfirmRegisterEvent] = useState(null);
+  // Approval modal for event registrations
+  const [approvalEvent, setApprovalEvent] = useState(null);
+  const [pendingBookings, setPendingBookings] = useState([]);
+  const [loadingApprovals, setLoadingApprovals] = useState(false);
 
   // Helper function to normalize event data (handle both Title/title)
   const normalizeEvent = (event) => {
@@ -110,6 +115,7 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
       endDate: event.endDate || event.EndDate,
       status: event.status !== undefined ? event.status : event.Status,
       createdBy: event.createdBy || event.CreatedBy,
+      createdAt: event.createdAt || event.CreatedAt || event.created_at || event.Created_At,
       bookingCount: event.bookingCount || event.BookingCount || 0,
       roomName: event.roomName || event.RoomName,
       labName: event.labName || event.LabName,
@@ -117,15 +123,101 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
     };
   };
 
+  // Load pending bookings for an event
+  const openApprovalsForEvent = async (event) => {
+    setApprovalEvent(event);
+    setPendingBookings([]);
+    setLoadingApprovals(true);
+    try {
+      const resp = await bookingApi.getBookings({
+        eventId: event.id || event.Id,
+        status: 0,
+        pageSize: 100
+      });
+      const list = Array.isArray(resp) ? resp : (resp?.data || resp?.Data || []);
+      setPendingBookings(list);
+    } catch (e) {
+      console.error('Failed to load pending bookings for event', event.id, e);
+      setPendingBookings([]);
+    } finally {
+      setLoadingApprovals(false);
+    }
+  };
+
+  const handleApproveRejectBooking = async (booking, action) => {
+    const id = booking.id || booking.Id;
+    const status = action === 'approve' ? 1 : 2;
+    const confirmed = window.confirm(`Are you sure you want to ${action} this registration?`);
+    if (!confirmed) return;
+    try {
+      await bookingApi.updateBookingStatus(id, status, action === 'reject' ? 'Rejected by event manager' : 'Approved by event manager');
+      setPendingBookings(prev => prev.filter(b => (b.id || b.Id) !== id));
+      showToast(`Booking ${action}d successfully`, 'success');
+    } catch (err) {
+      console.error('Failed to update booking status', err);
+      showToast(err.message || `Failed to ${action} booking`, 'error');
+    }
+  };
+
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
     // No timeout - toast will remain visible until manually dismissed or replaced
   };
 
+  const STATUS_MAP = {
+    '0': 'Active',
+    '1': 'Inactive',
+    '2': 'Cancelled',
+    '3': 'Completed'
+  };
+
+  const normalizeStatus = (value) => {
+    if (value === null || value === undefined) return '';
+    const strValue = String(value);
+    return STATUS_MAP[strValue] || strValue;
+  };
+
+  const filterLecturerEvents = (events, filters) => {
+    let filtered = events;
+
+    if (filters.title) {
+      const term = filters.title.toLowerCase();
+      filtered = filtered.filter(event => {
+        const title = (event.title || '').toLowerCase();
+        const location = (event.location || '').toLowerCase();
+        return title.includes(term) || location.includes(term);
+      });
+    }
+
+    if (filters.status !== '' && filters.status !== undefined) {
+      const targetStatus = normalizeStatus(filters.status).toLowerCase();
+      filtered = filtered.filter(event => normalizeStatus(event.status).toLowerCase() === targetStatus);
+    }
+
+    if (filters.startDateFrom) {
+      const fromDate = new Date(filters.startDateFrom);
+      filtered = filtered.filter(event => {
+        if (!event.startDate) return false;
+        const start = new Date(event.startDate);
+        return !Number.isNaN(start.getTime()) && start >= fromDate;
+      });
+    }
+
+    if (filters.startDateTo) {
+      const toDate = new Date(filters.startDateTo);
+      filtered = filtered.filter(event => {
+        if (!event.startDate) return false;
+        const start = new Date(event.startDate);
+        return !Number.isNaN(start.getTime()) && start <= toDate;
+      });
+    }
+
+    return filtered;
+  };
+
   // Load event data with pagination
   const loadEvents = useCallback(async (page = currentPage, isPagination = false) => {
     try {
-      // Only show main loading on initial load, not on pagination
       if (isPagination) {
         setPaginationLoading(true);
       } else {
@@ -133,65 +225,76 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
       }
       setError(null);
 
-      // Use current API filters with pagination
       const filters = {
         ...apiFilters,
-        page: page - 1, // Backend uses 0-based pagination
+        page: page - 1,
         pageSize: pageSize
       };
-      
-      // Clean up empty filters
+
       const cleanFilters = Object.fromEntries(
-        Object.entries(filters).filter(([key, value]) => 
+        Object.entries(filters).filter(([key, value]) =>
           value !== '' && value !== null && value !== undefined && value !== false
         )
       );
 
-      // Try to get event list first, handle other calls separately
       let eventList;
-      try {
-        eventList = await eventApi.getEvents(cleanFilters);
-      } catch (authErr) {
-        // If 401, try to refresh token and retry once
-        if (authErr.status === 401) {
-          try {
-            await authApi.refresh();
-            eventList = await eventApi.getEvents(cleanFilters);
-          } catch (refreshErr) {
-            throw authErr; // Throw original error if refresh fails
+      if (isLecturer) {
+        try {
+          eventList = await eventApi.getMyEvents();
+        } catch (myEventsErr) {
+          console.warn('Failed to load lecturer events via /my-events, attempting fallback', myEventsErr);
+          const storedUser = window.localStorage.getItem('user') || window.sessionStorage.getItem('user');
+          const user = storedUser ? JSON.parse(storedUser) : null;
+          const lecturerId = user?.id || user?.Id;
+          if (lecturerId) {
+            eventList = await eventApi.getEventsByUserId(lecturerId);
+          } else {
+            throw myEventsErr;
           }
-        } else {
-          throw authErr;
         }
-      }
-      
-      // Get counts separately with error handling
-      let totalCount = 0;
-      let activeCount = 0;
-      
-      try {
-        const countResult = await eventApi.getEventCount();
-        totalCount = countResult?.Count || countResult?.count || 0;
-      } catch (countErr) {
-        console.warn('Failed to get total count:', countErr);
-        // Fallback: count from event list if it's an array
-        if (Array.isArray(eventList)) {
-          totalCount = eventList.length;
-        }
-      }
-      
-      try {
-        const activeCountResult = await eventApi.getActiveEventCount();
-        activeCount = activeCountResult?.ActiveCount || activeCountResult?.activeCount || 0;
-      } catch (activeErr) {
-        console.warn('Failed to get active count:', activeErr);
-        // Fallback: count active events from list
-        if (Array.isArray(eventList)) {
-          activeCount = eventList.filter(event => event.status === 'Active').length;
+      } else {
+        try {
+          eventList = await eventApi.getEvents(cleanFilters);
+        } catch (authErr) {
+          if (authErr.status === 401) {
+            try {
+              await authApi.refresh();
+              eventList = await eventApi.getEvents(cleanFilters);
+            } catch (refreshErr) {
+              throw authErr;
+            }
+          } else {
+            throw authErr;
+          }
         }
       }
 
-      console.log('Event API responses:', { eventList, totalCount, activeCount });
+      let totalCount = 0;
+      let activeCount = 0;
+      let derivedTotalCount = 0;
+      let derivedTotalPages = 1;
+
+      if (!isLecturer) {
+        try {
+          const countResult = await eventApi.getEventCount();
+          totalCount = countResult?.Count || countResult?.count || 0;
+        } catch (countErr) {
+          console.warn('Failed to get total count:', countErr);
+          if (Array.isArray(eventList)) {
+            totalCount = eventList.length;
+          }
+        }
+
+        try {
+          const activeCountResult = await eventApi.getActiveEventCount();
+          activeCount = activeCountResult?.ActiveCount || activeCountResult?.activeCount || 0;
+        } catch (activeErr) {
+          console.warn('Failed to get active count:', activeErr);
+          if (Array.isArray(eventList)) {
+            activeCount = eventList.filter(event => normalizeStatus(event.status).toLowerCase() === 'active').length;
+          }
+        }
+      }
 
       // Handle array response format
       let eventData = [];
@@ -208,48 +311,82 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
         totalCountFromApi = eventList.TotalCount || eventList.Data.length;
       }
 
-      // Determine if any filters (besides pagination) are applied
-      const hasNonPagingFilters = !!(filters.title || filters.location || filters.status !== '' || filters.startDateFrom || filters.startDateTo);
+      if (!isLecturer) {
+        const hasNonPagingFilters = !!(filters.title || filters.location || filters.status !== '' || filters.startDateFrom || filters.startDateTo);
+        derivedTotalCount = (!hasNonPagingFilters && totalCount) ? totalCount : totalCountFromApi;
+        derivedTotalPages = Math.max(1, Math.ceil((derivedTotalCount || 0) / pageSize));
+        console.log('Normalized counts:', { totalCount, activeCount, derivedTotalCount, derivedTotalPages });
+      } else {
+        console.log('Lecturer event load:', { totalItems: eventData.length });
+      }
 
-      // Prefer backend total count when no non-paging filters are applied
-      const derivedTotalCount = (!hasNonPagingFilters && totalCount) ? totalCount : totalCountFromApi;
-      const derivedTotalPages = Math.max(1, Math.ceil((derivedTotalCount || 0) / pageSize));
-
-      console.log('Normalized counts:', { totalCount, activeCount, derivedTotalCount, derivedTotalPages });
-
-      // Normalize event data to handle both Title/title properties
-      const normalizedEvents = eventData.map(event => normalizeEvent(event));
-
-      // Set events first (without location)
-      setEvents(normalizedEvents);
-
-      // Load location for events that don't have it (from event detail) - lazy load
-      const loadLocationsForEvents = async () => {
-        const eventsNeedingLocation = normalizedEvents.filter(e => !e.location || e.location === 'N/A' || e.location === '');
+      let normalizedEvents = eventData.map(event => normalizeEvent(event));
+      
+      // Sort by newest first (prefer createdAt if available, fallback to startDate)
+      // This ensures newest events appear first for all roles (admin, lecturer, student)
+      normalizedEvents.sort((a, b) => {
+        // Try to get createdAt from various possible field names
+        const aCreatedAt = a.createdAt || a.CreatedAt || a.created_at || a.Created_At || 
+                          (a.originalEvent && (a.originalEvent.createdAt || a.originalEvent.CreatedAt));
+        const bCreatedAt = b.createdAt || b.CreatedAt || b.created_at || b.Created_At || 
+                          (b.originalEvent && (b.originalEvent.createdAt || b.originalEvent.CreatedAt));
         
+        // If both have createdAt, use it for sorting
+        if (aCreatedAt && bCreatedAt) {
+          const aDate = new Date(aCreatedAt).getTime();
+          const bDate = new Date(bCreatedAt).getTime();
+          // Sort descending (newest first)
+          return bDate - aDate;
+        }
+        
+        // If only one has createdAt, prioritize it
+        if (aCreatedAt && !bCreatedAt) return -1;
+        if (!aCreatedAt && bCreatedAt) return 1;
+        
+        // Fallback to startDate if createdAt is not available
+        const aStartDate = a.startDate || a.StartDate || a.start_date || a.Start_Date || 0;
+        const bStartDate = b.startDate || b.StartDate || b.start_date || b.Start_Date || 0;
+        const aDate = new Date(aStartDate).getTime();
+        const bDate = new Date(bStartDate).getTime();
+        
+        // Sort descending (newest first)
+        return bDate - aDate;
+      });
+      
+      if (isLecturer) {
+        normalizedEvents = filterLecturerEvents(normalizedEvents, apiFilters);
+      }
+
+      const startIndex = (page - 1) * pageSize;
+      const eventsForDisplay = isLecturer
+        ? normalizedEvents.slice(startIndex, startIndex + pageSize)
+        : normalizedEvents;
+
+      setEvents(eventsForDisplay);
+
+      const loadLocationsForEvents = async () => {
+        const eventsNeedingLocation = eventsForDisplay.filter(e => !e.location || e.location === 'N/A' || e.location === '');
+
         if (eventsNeedingLocation.length === 0) {
           return;
         }
 
-        // Load location for each event in parallel (limit to visible events only)
         const eventsWithLocation = await Promise.all(
-          normalizedEvents.map(async (event) => {
-            // If event already has location, return as is
+          eventsForDisplay.map(async (event) => {
             if (event.location && event.location !== 'N/A' && event.location !== '') {
               return event;
             }
 
-            // Load event detail to get location
             try {
               const eventDetail = await eventApi.getEventById(event.id);
               const location = eventDetail.location || eventDetail.Location ||
                               eventDetail.roomName || eventDetail.RoomName ||
                               eventDetail.labName || eventDetail.LabName ||
-                              (eventDetail.roomSlots && eventDetail.roomSlots.length > 0 
-                                ? eventDetail.roomSlots[0].roomName || eventDetail.roomSlots[0].RoomName 
+                              (eventDetail.roomSlots && eventDetail.roomSlots.length > 0
+                                ? eventDetail.roomSlots[0].roomName || eventDetail.roomSlots[0].RoomName
                                 : null) ||
                               'N/A';
-              
+
               return {
                 ...event,
                 location: location,
@@ -259,24 +396,31 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
               };
             } catch (error) {
               console.error(`Error loading location for event ${event.id}:`, error);
-              return event; // Return event without location if error
+              return event;
             }
           })
         );
 
-        // Update events with location
         setEvents(eventsWithLocation);
       };
 
-      // Load locations asynchronously (don't block UI)
       loadLocationsForEvents();
-      setTotalPages(derivedTotalPages);
-      setTotalEvents(derivedTotalCount);
-      setStats({ total: totalCount, active: activeCount });
+
+      if (isLecturer) {
+        const effectiveTotalCount = normalizedEvents.length;
+        const effectiveTotalPages = Math.max(1, Math.ceil(effectiveTotalCount / pageSize));
+        const lecturerActiveCount = normalizedEvents.filter(event => normalizeStatus(event.status).toLowerCase() === 'active').length;
+        setTotalPages(effectiveTotalPages);
+        setTotalEvents(effectiveTotalCount);
+        setStats({ total: effectiveTotalCount, active: lecturerActiveCount });
+      } else {
+        setTotalPages(derivedTotalPages);
+        setTotalEvents(derivedTotalCount);
+        setStats({ total: totalCount, active: activeCount });
+      }
     } catch (err) {
       console.error('Error loading events:', err);
-      
-      // Handle specific error types
+
       if (err.status === 401) {
         setError('Authentication required. Please log in again.');
       } else if (err.status === 403) {
@@ -286,7 +430,7 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
       } else {
         setError(err.message || 'Unable to load event list');
       }
-      
+
       setEvents([]);
       setTotalEvents(0);
       setTotalPages(1);
@@ -294,7 +438,7 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
       setLoading(false);
       setPaginationLoading(false);
     }
-  }, [apiFilters, currentPage, pageSize]);
+  }, [apiFilters, currentPage, pageSize, isLecturer]);
 
   useEffect(() => {
     loadEvents();
@@ -324,8 +468,15 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
         return eventId != null && eventId !== '';
       });
       
-      // Get unique event IDs
-      const eventIds = new Set(eventBookings.map(b => b.eventId || b.EventId));
+      // Get unique event IDs - normalize to lowercase strings for comparison
+      const eventIds = new Set(
+        eventBookings
+          .map(b => {
+            const id = b.eventId || b.EventId;
+            return id ? String(id).toLowerCase() : null;
+          })
+          .filter(id => id != null)
+      );
       setRegisteredEventIds(eventIds);
     } catch (error) {
       console.error('Error loading registered events:', error);
@@ -365,7 +516,7 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
     }
     
     // Check if already registered
-    if (registeredEventIds.has(event.id)) {
+    if (registeredEventIds.has(String(event.id).toLowerCase())) {
       showToast('You have already registered for this event', 'error');
       return;
     }
@@ -464,8 +615,8 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
       console.log('Creating booking with payload:', bookingPayload);
       await bookingApi.createBooking(bookingPayload);
       
-      // Update registered events
-      setRegisteredEventIds(prev => new Set([...prev, event.id]));
+      // Update registered events - normalize to lowercase
+      setRegisteredEventIds(prev => new Set([...prev, String(event.id).toLowerCase()]));
       
       // Update event booking count
       setEvents(prevEvents => 
@@ -905,7 +1056,20 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
                       </div>
                       <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                          <h3 style={{ fontSize: 16, margin: 0, color: '#0f172a' }}>{event.title}</h3>
+                          <h3
+                            onClick={() => onViewEvent && onViewEvent(event.id)}
+                            style={{
+                              fontSize: 16,
+                              margin: 0,
+                              color: '#0f172a',
+                              cursor: onViewEvent ? 'pointer' : 'default',
+                              textDecoration: onViewEvent ? 'underline' : 'none',
+                              textUnderlineOffset: onViewEvent ? '2px' : undefined
+                            }}
+                            title={onViewEvent ? 'View details' : undefined}
+                          >
+                            {event.title}
+                          </h3>
                           {isAdmin && (
                             <span style={{ fontSize: 11, color: '#94a3b8' }}>#{idShort}</span>
                           )}
@@ -924,7 +1088,7 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
                         <div style={{ 
                           display: 'flex', 
                           alignItems: 'center', 
-                          justifyContent: 'space-between', 
+                            justifyContent: 'space-between', 
                           marginTop: 12,
                           paddingTop: 12,
                           borderTop: '1px solid #e5e7eb',
@@ -946,10 +1110,11 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
                             gap: 6, 
                             alignItems: 'center',
                             flexShrink: 0,
-                            minWidth: 0
+                            minWidth: 0,
+                            marginLeft: 'auto'
                           }}>
                             {isStudent && (
-                              registeredEventIds.has(event.id) ? (
+                              registeredEventIds.has(String(event.id).toLowerCase()) ? (
                                 <button
                                   className="btn btn-sm"
                                   style={{ 
@@ -1032,26 +1197,37 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
                               )
                             )}
                             {(isAdmin || userRole === 'Lecturer') && (
+                              <>
                               <button
-                                className="btn btn-sm btn-icon btn-icon-outline color-blue"
-                                onClick={() => openEditPage(event)}
+                                className="btn btn-sm"
+                                onClick={() => openApprovalsForEvent(event)}
                                 disabled={actionLoading}
-                                aria-label="Edit event"
-                                title="Edit"
-                                style={{ 
-                                  width: '32px', 
-                                  height: '32px', 
-                                  padding: 0,
+                                title="Review registrations"
+                                style={{
+                                  background: '#06b6d4',
+                                  color: '#ffffff',
+                                  border: 'none',
+                                  padding: '6px 12px',
+                                  height: '32px',
+                                  fontSize: '12px',
                                   display: 'flex',
                                   alignItems: 'center',
-                                  justifyContent: 'center'
+                                  justifyContent: 'center',
+                                  gap: '4px',
+                                  whiteSpace: 'nowrap',
+                                  flex: '0 0 auto',
+                                  borderRadius: 8
                                 }}
                               >
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                  <path d="M12 20h9"/>
-                                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M8 2v4"></path>
+                                  <path d="M16 2v4"></path>
+                                  <rect width="18" height="18" x="3" y="4" rx="2"></rect>
+                                  <path d="M3 10h18"></path>
                                 </svg>
+                                Approvals
                               </button>
+                              </>
                             )}
                             {isAdmin && (
                               <button
@@ -1305,6 +1481,87 @@ const EventList = ({ userRole = 'Student', onSelectEvent, onViewEvent }) => {
                 ) : (
                   'Confirm Registration'
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Approvals Modal */}
+      {approvalEvent && (
+        <div className="modal-overlay" onClick={() => setApprovalEvent(null)}>
+          <div
+            className="modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: '880px', maxWidth: '92vw' }}
+          >
+            <div className="modal-header">
+              <h3>Pending Registrations - {approvalEvent.title}</h3>
+            </div>
+            <div className="modal-body">
+              {loadingApprovals ? (
+                <div className="loading" style={{ padding: '20px', textAlign: 'center' }}>
+                  <div className="loading-spinner"></div>
+                  Loading pending registrations...
+                </div>
+              ) : pendingBookings.length === 0 ? (
+                <div className="no-data" style={{ color: '#64748b' }}>No pending registrations</div>
+              ) : (
+                <table className="room-table">
+                  <thead>
+                    <tr>
+                      <th>Student</th>
+                      <th>Start</th>
+                      <th>End</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pendingBookings.map(b => {
+                      const id = b.id || b.Id;
+                      const userName = b.userName || b.UserName || 'Student';
+                      const start = b.startTime || b.StartTime;
+                      const end = b.endTime || b.EndTime;
+                      const status = b.status !== undefined ? b.status : b.Status;
+                      return (
+                        <tr key={id}>
+                          <td>{userName}</td>
+                          <td>{start ? new Date(start).toLocaleString() : 'N/A'}</td>
+                          <td>{end ? new Date(end).toLocaleString() : 'N/A'}</td>
+                          <td><span className="status-badge status-pending" style={{ fontSize: '0.625rem' }}>Pending</span></td>
+                          <td>
+                            <div className="action-buttons">
+                              <button
+                                className="btn btn-sm btn-icon btn-icon-outline color-green"
+                                onClick={() => handleApproveRejectBooking(b, 'approve')}
+                                title="Approve"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <polyline points="20 6 9 17 4 12"></polyline>
+                                </svg>
+                              </button>
+                              <button
+                                className="btn btn-sm btn-icon btn-icon-outline color-red"
+                                onClick={() => handleApproveRejectBooking(b, 'reject')}
+                                title="Reject"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                                </svg>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setApprovalEvent(null)}>
+                Close
               </button>
             </div>
           </div>

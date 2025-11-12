@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { bookingApi, authApi } from '../../../api';
+import { bookingApi, authApi, roomsApi } from '../../../api';
 import BookingStatusForm from '../admin/BookingStatusForm';
 
 /**
@@ -39,6 +39,7 @@ const BookingList = ({
   const [actionLoading, setActionLoading] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [selectedBooking, setSelectedBooking] = useState(null);
+  const [roomLabNames, setRoomLabNames] = useState({});
 
   const isAdmin = userRole === 'Admin';
 
@@ -209,6 +210,39 @@ const BookingList = ({
       let bookingData = [];
       if (Array.isArray(bookingList)) {
         bookingData = bookingList.map(normalizeBooking);
+      }
+
+      // Enrich with LabName by fetching room details for distinct roomIds
+      try {
+        const distinctRoomIds = Array.from(new Set(bookingData.map(b => b.roomId).filter(Boolean)));
+        const missingRoomIds = distinctRoomIds.filter(id => !roomLabNames[id]);
+        if (missingRoomIds.length > 0) {
+          const roomDetails = await Promise.all(
+            missingRoomIds.map(async (id) => {
+              try {
+                const room = await roomsApi.getRoomById(id);
+                const labName = room.labName || room.LabName || (room.lab && (room.lab.name || room.lab.Name)) || null;
+                return { id, labName };
+              } catch {
+                return { id, labName: null };
+              }
+            })
+          );
+          const labMapUpdate = {};
+          roomDetails.forEach(({ id, labName }) => {
+            labMapUpdate[id] = labName;
+          });
+          if (Object.keys(labMapUpdate).length > 0) {
+            setRoomLabNames(prev => ({ ...prev, ...labMapUpdate }));
+          }
+        }
+        // Attach labName from cache/map
+        bookingData = bookingData.map(b => ({
+          ...b,
+          labName: roomLabNames[b.roomId] || null
+        }));
+      } catch (_e) {
+        // ignore enrichment errors
       }
 
       const totalPagesFromCount = Math.max(1, Math.ceil(totalCount / pageSize));
@@ -619,6 +653,7 @@ const BookingList = ({
             <thead>
               <tr>
                 <th className="col-name">Room</th>
+                <th>Lab</th>
                 {isAdmin && <th>User</th>}
                 <th>Purpose</th>
                 <th>Booking Date</th>
@@ -631,7 +666,7 @@ const BookingList = ({
             <tbody>
               {loading && !paginationLoading ? (
                 <tr>
-                  <td colSpan={isAdmin ? "7" : "6"} className="loading-cell">
+                  <td colSpan={isAdmin ? "9" : "7"} className="loading-cell">
                     <div className="loading-spinner"></div>
                     Loading bookings...
                   </td>
@@ -640,6 +675,7 @@ const BookingList = ({
                 // Show skeleton rows during pagination
                 Array.from({ length: pageSize }).map((_, index) => (
                   <tr key={`skeleton-${index}`} className="skeleton-row">
+                    <td><div className="skeleton-text"></div></td>
                     <td><div className="skeleton-text"></div></td>
                     {isAdmin && <td><div className="skeleton-text"></div></td>}
                     <td><div className="skeleton-text"></div></td>
@@ -652,7 +688,7 @@ const BookingList = ({
                 ))
               ) : filteredBookings.length === 0 ? (
                 <tr>
-                  <td colSpan={isAdmin ? "7" : "6"} className="no-data">
+                  <td colSpan={isAdmin ? "9" : "7"} className="no-data">
                     {apiFilters.searchTerm ? 'No bookings found matching your search' : 'No booking data'}
                   </td>
                 </tr>
@@ -669,6 +705,7 @@ const BookingList = ({
                         </span>
                       )}
                     </td>
+                    <td>{booking.labName || 'N/A'}</td>
                     {isAdmin && <td>{booking.userName}</td>}
                     <td>{booking.purpose || 'N/A'}</td>
                     <td>{formatDateOnly(booking.startTime)}</td>

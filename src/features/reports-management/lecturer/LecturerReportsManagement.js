@@ -100,7 +100,7 @@ const LecturerReportsManagement = () => {
       }
 
       try {
-        countData = await reportsApi.getUserReportCount();
+        countData = await reportsApi.getUserReportsCount();
       } catch (err) {
         console.error('Error fetching report count:', err);
         countData = { count: 0 };
@@ -361,12 +361,12 @@ const LecturerReportsManagement = () => {
                     </td>
                     <td>{category}</td>
                     <td>
-                      <span className={`status-badge ${getPriorityBadge(priority)}`} style={{ fontSize: '12px' }}>
+                      <span className={`status-badge ${getPriorityBadge(priority)}`} style={{ fontSize: '0.625rem' }}>
                         {priority}
                       </span>
                     </td>
                     <td>
-                      <span className={`status-badge status-${statusInfo.class}`} style={{ fontSize: '12px' }}>
+                      <span className={`status-badge status-${statusInfo.class}`} style={{ fontSize: '0.625rem' }}>
                         {statusInfo.label}
                       </span>
                     </td>

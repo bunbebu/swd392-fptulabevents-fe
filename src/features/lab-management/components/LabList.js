@@ -602,7 +602,6 @@ const LabList = ({
             <table className="lab-table">
               <thead>
                 <tr>
-                  {isAdmin && <th>ID</th>}
                   <th className="col-name">Name</th>
                   <th className="col-location">Location</th>
                   <th>Room</th>
@@ -615,7 +614,7 @@ const LabList = ({
               <tbody>
                 {loading && !paginationLoading ? (
                   <tr>
-                    <td colSpan={isAdmin ? "8" : "7"} className="loading-cell">
+                    <td colSpan="7" className="loading-cell">
                       <div className="loading-spinner"></div>
                       Loading labs...
                     </td>
@@ -624,7 +623,6 @@ const LabList = ({
                   // Show skeleton rows during pagination
                   Array.from({ length: pageSize }).map((_, index) => (
                     <tr key={`skeleton-${index}`} className="skeleton-row">
-                      {isAdmin && <td><div className="skeleton-text"></div></td>}
                       <td><div className="skeleton-text"></div></td>
                       <td><div className="skeleton-text"></div></td>
                       <td><div className="skeleton-text"></div></td>
@@ -636,25 +634,13 @@ const LabList = ({
                   ))
                 ) : labs.length === 0 ? (
                   <tr>
-                    <td colSpan={isAdmin ? "8" : "7"} className="no-data">
+                    <td colSpan="7" className="no-data">
                       No lab data
                     </td>
                   </tr>
                 ) : (
                   labs.map((lab) => (
                     <tr key={lab.id} className={lab.isOptimistic ? 'optimistic-row' : ''}>
-                      {isAdmin && (
-                        <td>
-                          {lab.id?.substring(0, 8)}...
-                          {lab.isOptimistic && (
-                            <span className="optimistic-indicator" title="Saving...">
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M21 12a9 9 0 11-6.219-8.56"/>
-                              </svg>
-                            </span>
-                          )}
-                        </td>
-                      )}
                       <td className="col-name">
                         <div>
                           <strong>{lab.name}</strong>

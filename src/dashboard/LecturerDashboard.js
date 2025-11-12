@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { EventList, EventDetail } from '../features/event-management';
 import { EditEvent } from '../features/event-management/admin';
-import { LabList } from '../features/lab-management';
 import { EquipmentList } from '../features/equipment-management';
 import LecturerReportsManagement from '../features/reports-management/lecturer/LecturerReportsManagement';
 import LecturerNotifications from '../features/notification-management/lecturer/LecturerNotifications';
 import { authApi, bookingApi, eventApi, labsApi, roomsApi, equipmentApi, reportsApi, notificationApi } from '../api';
+import UserReportForm from '../features/reports-management/user/UserReportForm';
 
 const LecturerDashboard = ({ user: userProp }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -16,6 +16,12 @@ const LecturerDashboard = ({ user: userProp }) => {
   const [editingEventId, setEditingEventId] = useState(null);
   const [eventToast, setEventToast] = useState(null);
   const userDropdownRef = useRef(null);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [notificationDropdownOpen, setNotificationDropdownOpen] = useState(false);
+  const [recentNotifications, setRecentNotifications] = useState([]);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   // Dashboard data states
   const [pendingBookings, setPendingBookings] = useState([]);
@@ -113,15 +119,24 @@ const LecturerDashboard = ({ user: userProp }) => {
         // Filter events created by current lecturer
         const lecturerEvents = Array.isArray(allEvents)
           ? allEvents.filter(e => {
-              const eventCreator = e.createdBy || e.CreatedBy;
-              return eventCreator === userId || eventCreator === user?.username;
+              const eventCreator = e.createdBy || e.CreatedBy || '';
+              const creatorLc = String(eventCreator || '').toLowerCase();
+              const possibleMatches = [
+                user?.fullname,
+                user?.username,
+                user?.email
+              ]
+              .filter(Boolean)
+              .map(v => String(v).toLowerCase());
+              // Backend returns CreatedBy as Fullname; match against fullname/username/email
+              return possibleMatches.includes(creatorLc);
             })
           : [];
 
         // Calculate active events
         const activeEvents = lecturerEvents.filter(e => {
           const status = e.status || e.Status;
-          return status === 'Active' || status === 0;
+          return status === 'Active' || status === 0 || String(status).toLowerCase() === 'active';
         });
 
         // Calculate total participants from bookings count
@@ -192,6 +207,35 @@ const LecturerDashboard = ({ user: userProp }) => {
     };
   }, []);
 
+  const loadRecentNotifications = async () => {
+    try {
+      setLoadingNotifications(true);
+      const list = await notificationApi.getUserNotifications({ page: 1, pageSize: 10 });
+      const items = Array.isArray(list) ? list : (list?.data || list?.Data || []);
+      setRecentNotifications(items);
+    } catch (e) {
+      setRecentNotifications([]);
+    } finally {
+      setLoadingNotifications(false);
+    }
+  };
+
+  const refreshUnreadCount = async () => {
+    try {
+      const count = await notificationApi.getUnreadNotificationCount();
+      setUnreadCount(typeof count === 'number' ? count : (count?.count || count?.Count || 0));
+    } catch (_e) {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    refreshUnreadCount();
+    // Optionally refresh every 60s
+    const t = setInterval(refreshUnreadCount, 60000);
+    return () => clearInterval(t);
+  }, []);
+
   const handleLogout = async () => {
     try {
       await authApi.logout();
@@ -207,6 +251,19 @@ const LecturerDashboard = ({ user: userProp }) => {
     } catch {}
     // Redirect to home page instead of reload to avoid callback route issues
     window.location.href = '/';
+  };
+
+  const handleReportSubmit = async (reportData) => {
+    try {
+      setReportLoading(true);
+      await reportsApi.createReport(reportData);
+      setShowReportModal(false);
+      setActiveTab('reports');
+    } catch (_e) {
+      setShowReportModal(false);
+    } finally {
+      setReportLoading(false);
+    }
   };
 
   const tabs = [
@@ -235,16 +292,7 @@ const LecturerDashboard = ({ user: userProp }) => {
         </svg>
       )
     },
-    { 
-      id: 'labs', 
-      label: 'Lab Availability', 
-      icon: (
-        <svg xmlns="http://www.w3.org/2000/svg" width="1.125rem" height="1.125rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-          <polyline points="9,22 9,12 15,12 15,22"></polyline>
-        </svg>
-      )
-    },
+
     { 
       id: 'equipment', 
       label: 'Equipment', 
@@ -314,6 +362,7 @@ const LecturerDashboard = ({ user: userProp }) => {
               <EventDetail
                 eventId={viewingEventId}
                 onNavigateBack={() => setViewingEventId(null)}
+                onEditEvent={(id) => setEditingEventId(id)}
               />
             </div>
           );
@@ -329,18 +378,14 @@ const LecturerDashboard = ({ user: userProp }) => {
             />
           </div>
         );
-      case 'labs':
-        return (
-          <div className="lecturer-content">
-            <LabList userRole="Lecturer" />
-          </div>
-        );
+
       case 'equipment':
         return (
           <div className="lecturer-content">
             <EquipmentList userRole="Lecturer" />
           </div>
         );
+
       case 'reports':
         return (
           <div className="lecturer-content">
@@ -698,7 +743,7 @@ const LecturerDashboard = ({ user: userProp }) => {
           </button>
 
           <div className="sidebar-brand">
-            <div className="brand-logo">FL</div>
+            <img src={require('../assets/images/fpt.png')} alt="FPT Logo" className="brand-logo" style={{ objectFit: 'contain' }} />
             <div className="brand-text">
               <h3>FPT Lab Events</h3>
               <p>LECTURER PORTAL</p>
@@ -773,18 +818,114 @@ const LecturerDashboard = ({ user: userProp }) => {
             
             <div className="header-right">
               <div className="header-icons">
-                <button className="icon-btn">
+                <button 
+                  className="icon-btn"
+                  title="Create Report"
+                  onClick={() => setShowReportModal(true)}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="1.125rem" height="1.125rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path>
+                    <line x1="4" y1="22" x2="4" y2="15"></line>
+                  </svg>
+                </button>
+                <div 
+                  className="icon-btn notification-wrapper" 
+                  onMouseEnter={() => { setNotificationDropdownOpen(true); loadRecentNotifications(); refreshUnreadCount(); }}
+                  onMouseLeave={() => setNotificationDropdownOpen(false)}
+                  onClick={() => { setActiveTab('notifications'); }}
+                  style={{ position: 'relative', cursor: 'pointer' }}
+                  title="Notifications"
+                  role="button"
+                >
                   <svg xmlns="http://www.w3.org/2000/svg" width="1.125rem" height="1.125rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path>
                     <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path>
                   </svg>
-                </button>
-                <button className="icon-btn">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="1.125rem" height="1.125rem" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="3"></circle>
-                    <path d="M12 1v6m0 6v6"></path>
-                  </svg>
-                </button>
+                  {unreadCount > 0 && (
+                    <span
+                      style={{
+                        position: 'absolute',
+                        top: '-4px',
+                        right: '-4px',
+                        background: '#ef4444',
+                        color: '#fff',
+                        borderRadius: '9999px',
+                        minWidth: '18px',
+                        height: '18px',
+                        lineHeight: '18px',
+                        padding: '0 5px',
+                        fontSize: '0.65rem',
+                        fontWeight: 700,
+                        textAlign: 'center',
+                        boxShadow: '0 0 0 2px #fff'
+                      }}
+                      aria-label={`${unreadCount} unread notifications`}
+                    >
+                      {unreadCount > 10 ? '10+' : unreadCount}
+                    </span>
+                  )}
+                  {notificationDropdownOpen && (
+                    <div 
+                      className="notification-dropdown" 
+                      style={{
+                        position: 'absolute',
+                        top: '110%',
+                        right: 0,
+                        width: '20rem',
+                        background: '#fff',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '8px',
+                        boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1)',
+                        zIndex: 20
+                      }}
+                    >
+                      <div style={{ padding: '10px 12px', borderBottom: '1px solid #f1f5f9' }}>
+                        <strong>Notifications</strong>
+                      </div>
+                      <div style={{ maxHeight: '320px', overflowY: 'auto' }}>
+                        {loadingNotifications ? (
+                          <div style={{ padding: '12px', color: '#64748b' }}>Loading...</div>
+                        ) : recentNotifications.length === 0 ? (
+                          <div style={{ padding: '12px', color: '#64748b' }}>No notifications</div>
+                        ) : (
+                          recentNotifications.map((n) => {
+                            const id = n.id || n.Id;
+                            const title = n.title || n.Title || 'Notification';
+                            const content = n.content || n.Content || '';
+                            const startDate = n.startDate || n.StartDate;
+                            const status = n.status || n.Status;
+                            const dateStr = startDate ? new Date(startDate).toLocaleString() : '';
+                            return (
+                              <div key={id} style={{ padding: '10px 12px', borderBottom: '1px solid #f8fafc' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                                  <div style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</div>
+                                  <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{dateStr}</span>
+                                </div>
+                                {content && (
+                                  <div style={{ color: '#64748b', fontSize: '0.85rem', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                                    {content}
+                                  </div>
+                                )}
+                                {status && (
+                                  <div style={{ marginTop: 6, fontSize: '0.7rem', color: '#475569' }}>{String(status)}</div>
+                                )}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                      <div style={{ padding: '8px', borderTop: '1px solid #f1f5f9' }}>
+                        <button 
+                          className="btn-secondary" 
+                          onClick={() => setActiveTab('notifications')} 
+                          style={{ width: '100%' }}
+                        >
+                          View all
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
               
               <div className="header-user" ref={userDropdownRef} onClick={() => setUserDropdownOpen(!userDropdownOpen)}>
@@ -852,6 +993,15 @@ const LecturerDashboard = ({ user: userProp }) => {
           </div>
         </footer>
       </div>
+
+      {/* Report Form Modal */}
+      {showReportModal && (
+        <UserReportForm
+          onSubmit={handleReportSubmit}
+          onCancel={() => setShowReportModal(false)}
+          loading={reportLoading}
+        />
+      )}
     </div>
   );
 };

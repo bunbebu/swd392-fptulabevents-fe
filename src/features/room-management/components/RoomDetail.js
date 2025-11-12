@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { roomsApi } from '../../../api';
+import { EquipmentList } from '../../equipment-management';
 
 /**
  * Room Detail Component
@@ -13,6 +14,7 @@ const RoomDetail = ({ roomId, onNavigateBack }) => {
   const [room, setRoom] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showCreateEquipment, setShowCreateEquipment] = useState(false);
 
   const loadRoomDetail = useCallback(async () => {
     try {
@@ -20,6 +22,22 @@ const RoomDetail = ({ roomId, onNavigateBack }) => {
       setError(null);
       const detail = await roomsApi.getRoomById(roomId);
       const data = (detail && (detail.data || detail.Data)) || detail;
+      
+      // Calculate active bookings from recentBookings
+      // Active bookings = approved bookings (not cancelled/rejected)
+      // Backend may calculate "active" as "currently happening", but we want to show all approved bookings
+      if (data && data.recentBookings && Array.isArray(data.recentBookings)) {
+        const approvedBookings = data.recentBookings.filter(booking => {
+          const status = (booking.status || booking.Status || '').toLowerCase();
+          // Count bookings that are approved (status = 'approved' or '1')
+          return status === 'approved' || status === '1';
+        });
+        // Update activeBookings to reflect the actual number of approved bookings
+        if (approvedBookings.length > 0) {
+          data.activeBookings = approvedBookings.length;
+        }
+      }
+      
       setRoom(data);
     } catch (err) {
       console.error('Error loading room details:', err);
@@ -199,26 +217,38 @@ const RoomDetail = ({ roomId, onNavigateBack }) => {
         </div>
 
         {/* Equipment List */}
-        {room.equipments && room.equipments.length > 0 && (
-          <div className="detail-card">
-            <div className="detail-card-header">
-              <h3>Equipment ({room.equipments.length})</h3>
-            </div>
-            <div className="equipment-list">
-              {room.equipments.map((equipment) => (
-                <div key={equipment.id} className="equipment-item">
-                  <div className="equipment-info">
-                    <span className="equipment-name">{equipment.name}</span>
-                    <span className="equipment-type">{equipment.type}</span>
-                  </div>
-                  <span className={getStatusBadgeClass(equipment.status)}>
-                    {equipment.status}
-                  </span>
-                </div>
-              ))}
-            </div>
+        <div className="detail-card">
+          <div className="detail-card-header">
+            <h3>Equipment</h3>
+            <button 
+              className="btn-new-booking"
+              onClick={() => setShowCreateEquipment(true)}
+              style={{ margin: 0 }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 12h14"></path>
+                <path d="M12 5v14"></path>
+              </svg>
+              Add Equipment to Room
+            </button>
           </div>
-        )}
+          <div style={{ marginTop: '16px' }}>
+            <EquipmentList 
+              userRole="Admin" 
+              roomId={roomId}
+              showCreatePage={showCreateEquipment}
+              onCreatePageClose={() => setShowCreateEquipment(false)}
+              onViewEquipment={(equipmentId) => {
+                // Optional: Handle view equipment detail
+                console.log('View equipment:', equipmentId);
+              }}
+              onEditEquipment={(equipmentId) => {
+                // Optional: Handle edit equipment
+                console.log('Edit equipment:', equipmentId);
+              }}
+            />
+          </div>
+        </div>
 
         {/* Recent Bookings */}
         {room.recentBookings && room.recentBookings.length > 0 && (

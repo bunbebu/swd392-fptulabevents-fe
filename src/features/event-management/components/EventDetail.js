@@ -9,10 +9,11 @@ import { eventApi } from '../../../api';
  * - US-XX: Admin - Manage events
  * - US-XX: User - View event details
  */
-const EventDetail = ({ eventId, onNavigateBack }) => {
+const EventDetail = ({ eventId, onNavigateBack, onEditEvent }) => {
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [editHover, setEditHover] = useState(false);
 
   const loadEventDetail = useCallback(async () => {
     try {
@@ -146,7 +147,7 @@ const EventDetail = ({ eventId, onNavigateBack }) => {
   return (
     <div className="create-room-page">
       <div className="page-header">
-        <div className="header-content">
+        <div className="header-content" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <button 
             className="back-button"
             onClick={onNavigateBack}
@@ -157,7 +158,34 @@ const EventDetail = ({ eventId, onNavigateBack }) => {
               <path d="M12 19l-7-7 7-7"></path>
             </svg>
           </button>
-          <h1>Event Details</h1>
+          <h1 style={{ margin: 0, flex: '1 1 auto' }}>Event Details</h1>
+          {onEditEvent && (
+            <button
+              className="btn"
+              onClick={() => onEditEvent(eventId)}
+              onMouseEnter={() => setEditHover(true)}
+              onMouseLeave={() => setEditHover(false)}
+              title="Edit Event"
+              style={{
+                background: editHover ? '#2563eb' : '#60a5fa',
+                color: '#ffffff',
+                border: 'none',
+                padding: '8px 16px',
+                borderRadius: 8,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                cursor: 'pointer',
+                boxShadow: editHover ? '0 2px 6px rgba(37, 99, 235, 0.4)' : '0 2px 6px rgba(96, 165, 250, 0.35)'
+              }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9"/>
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+              </svg>
+              Edit
+            </button>
+          )}
         </div>
       </div>
 

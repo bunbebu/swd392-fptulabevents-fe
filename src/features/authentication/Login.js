@@ -71,7 +71,7 @@ function Login({ onLogin, onSwitchToRegister }) {
         <div className="left-ornament left-ornament--one" />
         <div className="left-ornament left-ornament--two" />
         <div className="brand-row">
-          <div className="brand-badge">FL</div>
+          <img src={require('../../assets/images/fpt.png')} alt="FPT Logo" className="brand-badge" style={{ objectFit: 'contain', background: 'transparent' }} />
           <h1 className="brand-name">FPTU Lab Events</h1>
         </div>
         <div className="left-content">

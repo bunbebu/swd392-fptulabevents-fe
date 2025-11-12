@@ -420,7 +420,6 @@ const UserList = () => {
         <table className="user-table">
           <thead>
             <tr>
-              <th>ID</th>
               <th className="col-email">Email</th>
               <th className="col-username">Username</th>
               <th className="col-fullname">Full name</th>
@@ -432,7 +431,7 @@ const UserList = () => {
           <tbody>
             {loading && !paginationLoading ? (
               <tr>
-                <td colSpan="8" className="loading-cell">
+                <td colSpan="6" className="loading-cell">
                   <div className="loading-spinner"></div>
                   Loading users...
                 </td>
@@ -447,28 +446,17 @@ const UserList = () => {
                   <td><div className="skeleton-text"></div></td>
                   <td><div className="skeleton-text"></div></td>
                   <td><div className="skeleton-text"></div></td>
-                  <td><div className="skeleton-text"></div></td>
                 </tr>
               ))
             ) : users.length === 0 ? (
               <tr>
-                <td colSpan="8" className="no-data">
+                <td colSpan="6" className="no-data">
                   No user data
                 </td>
               </tr>
             ) : (
               users.map((user) => (
                 <tr key={user.id} className={user.isOptimistic ? 'optimistic-row' : ''}>
-                  <td>
-                    {user.id?.substring(0, 8)}...
-                    {user.isOptimistic && (
-                      <span className="optimistic-indicator" title="Saving...">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M21 12a9 9 0 11-6.219-8.56"/>
-                        </svg>
-                      </span>
-                    )}
-                  </td>
                   <td className="col-email">{user.email}</td>
                   <td className="col-username">{user.username}</td>
                   <td className="col-fullname">{user.fullname}</td>
