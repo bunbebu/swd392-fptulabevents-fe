@@ -218,21 +218,30 @@ const RoomDetail = ({ roomId, onNavigateBack, userRole = 'Student' }) => {
 
         {/* Equipment List */}
         <div className="detail-card">
-          <div className="detail-card-header">
-            <h3>Equipment</h3>
-            {userRole === 'Admin' && (
+          <div className="detail-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <h3 style={{ margin: 0 }}>Equipment</h3>
+            {userRole === 'Admin' ? (
               <button 
                 className="btn-new-booking"
-                onClick={() => setShowCreateEquipment(true)}
-                style={{ margin: 0 }}
+                onClick={() => {
+                  console.log('Create Equipment button clicked, userRole:', userRole);
+                  setShowCreateEquipment(true);
+                }}
+                style={{ 
+                  margin: 0,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  flexShrink: 0
+                }}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M5 12h14"></path>
                   <path d="M12 5v14"></path>
                 </svg>
-                Add Equipment to Room
+                Create New Equipment
               </button>
-            )}
+            ) : null}
           </div>
           <div style={{ marginTop: '16px' }}>
             <EquipmentList 

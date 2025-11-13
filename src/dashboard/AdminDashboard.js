@@ -324,6 +324,7 @@ const AdminDashboard = ({ user: userProp }) => {
               <RoomDetail
                 roomId={viewingRoomId}
                 onNavigateBack={() => setViewingRoomId(null)}
+                userRole="Admin"
               />
             </div>
           );

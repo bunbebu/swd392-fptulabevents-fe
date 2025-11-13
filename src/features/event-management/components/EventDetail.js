@@ -341,10 +341,6 @@ const EventDetail = ({ eventId, onNavigateBack, onEditEvent, userRole = 'Student
               <span className="detail-value">{formatDate(event.endDate)}</span>
             </div>
             <div className="detail-item">
-              <label>Capacity:</label>
-              <span className="detail-value">{typeof event.capacity === 'number' ? `${event.capacity} people` : 'N/A'}</span>
-            </div>
-            <div className="detail-item">
               <label>Lab:</label>
               <span className="detail-value">{event.labName || 'N/A'}</span>
             </div>
@@ -355,10 +351,6 @@ const EventDetail = ({ eventId, onNavigateBack, onEditEvent, userRole = 'Student
             <div className="detail-item">
               <label>Created By:</label>
               <span className="detail-value">{event.createdBy || 'N/A'}</span>
-            </div>
-            <div className="detail-item">
-              <label>Visibility:</label>
-              <span className="detail-value">{event.visibility ? 'Public' : 'Private'}</span>
             </div>
             <div className="detail-item">
               <label>Booking Count:</label>

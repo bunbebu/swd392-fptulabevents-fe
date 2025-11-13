@@ -641,7 +641,6 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                   <th className="col-name">Name</th>
                   <th>Capacity</th>
                   <th>Status</th>
-                  <th>Equipment Count</th>
                   <th>Active Bookings</th>
                   {(isAdmin || isLecturer) && <th>Actions</th>}
                 </tr>
@@ -649,7 +648,7 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
               <tbody>
                 {loading && !paginationLoading ? (
                   <tr>
-                    <td colSpan={(isAdmin || isLecturer) ? "6" : "5"} className="loading-cell">
+                    <td colSpan={(isAdmin || isLecturer) ? "5" : "4"} className="loading-cell">
                       <div className="loading-spinner"></div>
                       Loading rooms...
                     </td>
@@ -662,13 +661,12 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                       <td><div className="skeleton-text"></div></td>
                       <td><div className="skeleton-text"></div></td>
                       <td><div className="skeleton-text"></div></td>
-                      <td><div className="skeleton-text"></div></td>
                       {(isAdmin || isLecturer) && <td><div className="skeleton-text"></div></td>}
                     </tr>
                   ))
                 ) : rooms.length === 0 ? (
                   <tr>
-                    <td colSpan={(isAdmin || isLecturer) ? "6" : "5"} className="no-data">
+                    <td colSpan={(isAdmin || isLecturer) ? "5" : "4"} className="no-data">
                       No room data
                     </td>
                   </tr>
@@ -686,7 +684,6 @@ const RoomList = ({ userRole = 'Student', onSelectRoom, onViewRoom }) => {
                           {room.status || 'Unknown'}
                         </span>
                       </td>
-                      <td>{room.equipmentCount || 0}</td>
                       <td>{room.activeBookings || 0}</td>
                       {(isAdmin || isLecturer) && (
                         <td>
